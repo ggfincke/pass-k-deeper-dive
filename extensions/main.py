@@ -23,7 +23,6 @@ from schemas import (
     SampleRecord,
 )
 
-
 # Main execution
 def main():
     # Read HumanEval problems

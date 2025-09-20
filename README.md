@@ -1,115 +1,113 @@
-# HumanEval: Hand-Written Evaluation Set 
+# HumanEval Extensions
 
-This is an evaluation harness for the HumanEval problem solving dataset
-described in the paper "[Evaluating Large Language Models Trained on
-Code](https://arxiv.org/abs/2107.03374)".
+Reproducible experiments for the accompanying article. This repo builds on OpenAI’s HumanEval harness by adding a local generation pipeline (via Ollama), a subset-safe evaluator with unbiased pass@k and coverage@k, and small dataset utilities. See `originalREADME.md` for upstream details.
 
-## Installation
+# Getting Started
 
-Make sure to use python 3.7 or later:
-```
-$ conda create -n codex python=3.7
-$ conda activate codex
-```
+## 1) Prereqs
 
-Check out and install this repository:
-```
-$ git clone https://github.com/openai/human-eval
-$ pip install -e human-eval
-```
+- Python 3.10–3.12
+- An Ollama server with at least one model available (defaults gpt-oss:20b)
+- Git + a POSIX shell
 
-## Usage
+## 2) Setup Environment & Install
 
-**This program exists to run untrusted model-generated code. Users are strongly
-encouraged not to do so outside of a robust security sandbox. The [execution
-call](https://github.com/openai/human-eval/blob/master/human_eval/execution.py#L48-L58)
-in `execution.py` is deliberately commented out to ensure users read this
-disclaimer before running code in a potentially unsafe manner. See the comment in
-`execution.py` for more information and instructions.**
-
-After following the above instructions to enable execution, generate samples
-and save them in the following JSON Lines (jsonl) format, where each sample is
-formatted into a single line like so:
-```
-{"task_id": "Corresponding HumanEval task ID", "completion": "Completion only without the prompt"}
-```
-We provide `example_problem.jsonl` and `example_solutions.jsonl` under `data`
-to illustrate the format and help with debugging.
-
-Here is nearly functional example code (you just have to provide
-`generate_one_completion` to make it work) that saves generated completions to
-`samples.jsonl`.
-```
-from human_eval.data import write_jsonl, read_problems
-
-problems = read_problems()
-
-num_samples_per_task = 200
-samples = [
-    dict(task_id=task_id, completion=generate_one_completion(problems[task_id]["prompt"]))
-    for task_id in problems
-    for _ in range(num_samples_per_task)
-]
-write_jsonl("samples.jsonl", samples)
+**Recommended: Create a conda environment**
+```bash
+conda create -n humaneval python=3.12
+conda activate humaneval
 ```
 
-To evaluate the samples, run
-```
-$ evaluate_functional_correctness samples.jsonl
-Reading samples...
-32800it [00:01, 23787.50it/s]
-Running test suites...
-100%|...| 32800/32800 [16:11<00:00, 33.76it/s]
-Writing results to samples.jsonl_results.jsonl...
-100%|...| 32800/32800 [00:00<00:00, 42876.84it/s]
-{'pass@1': ..., 'pass@10': ..., 'pass@100': ...}
-```
-This script provides more fine-grained information in a new file ending in
-`<input_path>_results.jsonl`. Each row now contains whether the completion
-`passed` along with the execution `result` which is one of "passed", "timed
-out", or "failed".
-
-As a quick sanity-check, the example samples should yield 0.5 pass@1.
-```
-$ evaluate_functional_correctness data/example_samples.jsonl --problem_file=data/example_problem.jsonl
-Reading samples...
-6it [00:00, 3397.11it/s]
-Running example suites...
-100%|...| 6/6 [00:03<00:00,  1.96it/s]
-Writing results to data/example_samples.jsonl_results.jsonl...
-100%|...| 6/6 [00:00<00:00, 6148.50it/s]
-{'pass@1': 0.4999999999999999}
+**Install the repository**
+```bash
+git clone https://github.com/ggfincke/pass-k-deeper-dive
+cd pass-k-deeper-dive
+pip install -e .  # installs HumanEval + this repo as editable
 ```
 
-Because there is no unbiased way of estimating pass@k when there are fewer
-samples than k, the script does not evaluate pass@k for these cases. To
-evaluate with other k values, pass `--k=<comma-separated-values-here>`. For
-other options, see
-```
-$ evaluate_functional_correctness --help
-```
-However, we recommend that you use the default values for the rest.
-
-## Known Issues
-
-While evaluation uses very little memory, you might see the following error
-message when the system is running out of RAM. Since this may cause some
-correct programs to fail, we recommend that you free some memory and try again.
-```
-malloc: can't allocate region
+## 3) Start Ollama & pull a model
+```bash
+ollama serve &
+ollama pull gpt-oss:20b # requires about 13GB of storage
 ```
 
-## Citation
-
-Please cite using the following bibtex entry:
-
+## 4) Run a small experiment
+```python
+# Customize by editing 'extensions/constants.py'
+# Default values from constants.py:
+MODEL = "gpt-oss:20b"
+K = 5                     # 'k' in pass@k
+LIMIT = 10                # None means all 164 tasks
+MAX_NEW_TOKENS = 131072   # max context window in gpt-oss
+TEMP = 0.2
 ```
-@article{chen2021codex,
-  title={Evaluating Large Language Models Trained on Code},
-  author={Mark Chen and Jerry Tworek and Heewoo Jun and Qiming Yuan and Henrique Ponde de Oliveira Pinto and Jared Kaplan and Harri Edwards and Yuri Burda and Nicholas Joseph and Greg Brockman and Alex Ray and Raul Puri and Gretchen Krueger and Michael Petrov and Heidy Khlaaf and Girish Sastry and Pamela Mishkin and Brooke Chan and Scott Gray and Nick Ryder and Mikhail Pavlov and Alethea Power and Lukasz Kaiser and Mohammad Bavarian and Clemens Winter and Philippe Tillet and Felipe Petroski Such and Dave Cummings and Matthias Plappert and Fotios Chantzis and Elizabeth Barnes and Ariel Herbert-Voss and William Hebgen Guss and Alex Nichol and Alex Paino and Nikolas Tezak and Jie Tang and Igor Babuschkin and Suchir Balaji and Shantanu Jain and William Saunders and Christopher Hesse and Andrew N. Carr and Jan Leike and Josh Achiam and Vedant Misra and Evan Morikawa and Alec Radford and Matthew Knight and Miles Brundage and Mira Murati and Katie Mayer and Peter Welinder and Bob McGrew and Dario Amodei and Sam McCandlish and Ilya Sutskever and Wojciech Zaremba},
-  year={2021},
-  eprint={2107.03374},
-  archivePrefix={arXiv},
-  primaryClass={cs.LG}
-}
+
+```bash
+python extensions/main.py
 ```
+
+## Artifacts:
+
+- **samples.jsonl** — all non-empty completions
+- **empty_samples.jsonl** — tasks that needed a fallback stub (for debugging)
+- **samples.jsonl_results.jsonl** - evaluation of all samples
+- **Console** — unbiased pass@k (for k in [1, K]) and coverage@k for the subset
+
+# Usage
+
+### A) Generate with Ollama and evaluate automatically
+
+`extensions/main.py` reads tasks, samples K completions each (with retries on empty), writes samples.jsonl, then calls the evaluator for you.
+
+```bash
+python extensions/main.py
+```
+
+Tune via env (all optional):
+- `OLLAMA_URL` (default http://localhost:11434)
+- `MODEL` (default gpt-oss:20b)
+- `K`, `LIMIT` (0 → all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
+- `MAX_NEW_TOKENS`, `MAX_RETRIES`, `STOP`
+
+### B) Evaluate an existing JSONL (subset-safe)
+
+If you already have completions (from this repo or elsewhere), call:
+
+```python
+from extensions.custom_evaluation import evaluate_functional_correctness_subset
+evaluate_functional_correctness_subset("samples.jsonl", k=[1, 5])
+```
+
+This writes `samples.jsonl_results.jsonl` with per-sample pass/fail and prints pass@k + coverage@k.
+
+### C) Download and export HumanEval
+```bash
+python extensions/process_human_eval.py --outdir ./data/humaneval
+# Produces: humaneval.jsonl, humaneval.json, humaneval.csv
+```
+
+## Reproducibility tips
+
+- **Sampling variance**: pass@k moves with temperature/top-p/top-k; keep these fixed when comparing models.
+- **Subsets**: prefer larger `LIMIT` (or 0) so more tasks meet n ≥ k.
+- **Duplicates**: we normalize and dedupe completions before counting to avoid inflated pass@k.
+
+# Troubleshooting
+
+### Empty or truncated completions
+Model "thinking" can produce empty output while still consuming tokens. Try increasing MAX_NEW_TOKENS, inspect `empty_samples.jsonl`.
+
+### "malloc: can't allocate region" / OOM
+Free RAM/VRAM, reduce parallel load, or try a smaller model.
+
+### Ollama connection refused
+Ensure `ollama serve` is running and `OLLAMA_URL` matches (default http://localhost:11434).
+
+
+# Citation
+
+If you use this repo, please cite the original HumanEval paper (see exact citation in `originalREADME`)
+
+# License
+
+I maintain the same MIT license from the source repo

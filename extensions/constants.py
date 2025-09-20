@@ -14,7 +14,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Model name served by Ollama; must appear in 'ollama list'
 MODEL = os.getenv("MODEL", "gpt-oss:20b")
 # Number of completions to sample per HumanEval task
-K = int(os.getenv("K", "3"))
+K = int(os.getenv("K", "100"))
 
 def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     if raw is None:
@@ -26,7 +26,7 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     return None if value <= 0 else value
 
 # Maximum number of HumanEval tasks to process; None means all tasks
-LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=4)
+LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
 TEMP = float(os.getenv("TEMP", "0.2"))
 # Upper bound on new tokens produced per completion
