@@ -29,7 +29,7 @@ def main():
     # Read HumanEval problems
     problems: Dict[str, Dict] = read_problems()
     task_ids = sorted(problems.keys())
-    if LIMIT > 0:
+    if LIMIT is not None:
         task_ids = task_ids[:LIMIT]
 
     # Generate completions
