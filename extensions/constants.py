@@ -26,9 +26,10 @@ SYSTEM = (
     "You will be given a Python function signature and docstring.\n"
     "FORMAT CONTRACT (must follow exactly):\n"
     "• Output ONLY the function body (statements that would live inside the function).\n"
-    "• The FIRST line must begin with exactly four spaces.\n"
+    "• The FIRST line must begin with exactly four spaces (example: '    return None').\n"
+    "• Use four-space indentation for every subsequent line.\n"
     "• Do NOT output the 'def ...' line.\n"
     "• Do NOT output imports, markdown fences, explanations, or text outside the body.\n"
     "• Do NOT include top-level comments or print statements.\n"
     "• No leading blank lines. End with a single trailing newline.\n"
-) 
+)
