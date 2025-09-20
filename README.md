@@ -1,13 +1,13 @@
 # HumanEval Extensions
 
-Reproducible experiments for the accompanying article. This repo builds on OpenAI’s HumanEval harness by adding a local generation pipeline (via Ollama), a subset-safe evaluator with unbiased pass@k and coverage@k, and small dataset utilities. See `originalREADME.md` for upstream details.
+Reproducible experiments for the accompanying article. This repo builds on OpenAI's HumanEval harness by adding a local generation pipeline (via Ollama), a subset-safe evaluator with unbiased pass@k and coverage@k, and small dataset utilities. See [`originalREADME.md`](https://github.com/ggfincke/pass-k-deeper-dive/blob/master/originalREADME.md) for upstream details.
 
 # Getting Started
 
 ## 1) Prereqs
 
 - Python 3.10–3.12
-- An Ollama server with at least one model available (defaults gpt-oss:20b)
+- An [Ollama](https://ollama.com/) server with at least one model available (default: [gpt-oss:20b](https://ollama.com/library/gpt-oss:20b))
 - Git + a POSIX shell
 
 ## 2) Setup Environment & Install
@@ -57,7 +57,7 @@ python extensions/main.py
 
 ### A) Generate with Ollama and evaluate automatically
 
-`extensions/main.py` reads tasks, samples K completions each (with retries on empty), writes samples.jsonl, then calls the evaluator for you.
+[`extensions/main.py`](extensions/main.py) reads tasks, samples K completions each (with retries on empty), writes samples.jsonl, then calls the evaluator for you.
 
 ```bash
 python extensions/main.py
@@ -66,7 +66,7 @@ python extensions/main.py
 Tune via env (all optional):
 - `OLLAMA_URL` (default http://localhost:11434)
 - `MODEL` (default gpt-oss:20b)
-- `K`, `LIMIT` (0 → all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
+- `K`, `LIMIT` (0 -> all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
 - `MAX_NEW_TOKENS`, `MAX_RETRIES`, `STOP`
 
 ### B) Evaluate an existing JSONL (subset-safe)
@@ -101,12 +101,12 @@ Model "thinking" can produce empty output while still consuming tokens. Try incr
 Free RAM/VRAM, reduce parallel load, or try a smaller model.
 
 ### Ollama connection refused
-Ensure `ollama serve` is running and `OLLAMA_URL` matches (default http://localhost:11434).
+Ensure `ollama serve` is running and `OLLAMA_URL` matches (default http://localhost:11434). See [Ollama documentation](https://github.com/ollama/ollama/blob/main/docs/README.md) for setup details.
 
 
 # Citation
 
-If you use this repo, please cite the original HumanEval paper (see exact citation in `originalREADME`)
+If you use this repo, please cite the original HumanEval paper (see exact citation in [`originalREADME.md`](originalREADME.md))
 
 # License
 
