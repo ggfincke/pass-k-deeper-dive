@@ -15,7 +15,6 @@ Outputs:
 # imports
 import argparse
 import gzip
-import io
 import json
 import os
 import sys
