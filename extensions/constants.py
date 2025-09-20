@@ -1,38 +1,49 @@
 # ~/extensions/constants.py
-'''
-Constant values for our scripts
-'''
+"""
+Constants shared across scripts.
+
+These surface constant values that are consumed in separate modules
+"""
+
 import os
 from typing import Optional
 
-# default Ollama server URL
+
+# URL of the local Ollama server; override via env when pointing elsewhere
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-# must be a model in `ollama list`
-MODEL = os.getenv("MODEL", "gpt-oss:20b") 
-# pass@k
+# Model name served by Ollama; must appear in 'ollama list'
+MODEL = os.getenv("MODEL", "gpt-oss:20b")
+# Number of completions to sample per HumanEval task
 K = int(os.getenv("K", "3"))
-# helper func to parse max number of problems
-def parse_limit(env: str = "LIMIT", default: Optional[int] = None) -> Optional[int]:
-    raw = os.getenv(env)
+
+def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     if raw is None:
         return default
-    s = raw.strip().lower()
-    if s in {"0", "all", "none", ""}:
+    normalized = raw.strip().lower()
+    if normalized in {"0", "all", "none", ""}:
         return None
-    v = int(s)
-    return None if v <= 0 else v
-# max number of problems to evaluate (None = all)
-LIMIT: Optional[int] = parse_limit("LIMIT", default=2)
-# temperature for first attempt
-TEMP = float(os.getenv("TEMP", "0.2"))
-# temperature for retries
-RETRY_TEMP = float(os.getenv("RETRY_TEMP", "0.6"))
-# max tokens for generation (128k context window)
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "131072"))
-# max attempts (1 initial + retries)
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
+    value = int(normalized)
+    return None if value <= 0 else value
 
-# system prompt for Ollama
+# Maximum number of HumanEval tasks to process; None means all tasks
+LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=4)
+# Temperature used for generation requests
+TEMP = float(os.getenv("TEMP", "0.2"))
+# Upper bound on new tokens produced per completion
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "131072"))
+# Retry budget when the model returns empty completions
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
+# nucleus sampling parameter (set to 1.0 for pure sampling)
+TOP_P = float(os.getenv("TOP_P", "1.0"))
+# top-k sampling cutoff; zero disables the constraint
+TOP_K = int(os.getenv("TOP_K", "0"))
+# Penalty applied to repeated tokens to reduce loops
+REPEAT_PENALTY = float(os.getenv("REPEAT_PENALTY", "1.0"))
+# Comma-separated stop sequences applied during generation
+_STOP = os.getenv("STOP", "").strip()
+# Parsed list of stop sequences excluding empty entries
+STOP_SEQS = [s for s in _STOP.split(",") if s.strip()]
+# Instruction prompt sent as the Ollama system message
 SYSTEM = (
     "You will be given a Python function signature and docstring.\n"
     "FORMAT CONTRACT (must follow exactly):\n"

@@ -9,6 +9,7 @@ Defines data structures for:
 - JSON-compatible type aliases
 
 '''
+from dataclasses import dataclass
 from typing import Dict, List, Optional, TypedDict
 
 
@@ -38,6 +39,14 @@ class EmptySampleRecord(TypedDict, total=False):
 
 # Final sample record for HumanEval output
 class SampleRecord(TypedDict):
+    task_id: str
+    completion: str
+
+
+# Sample row for evaluation with stable indexing
+@dataclass
+class SampleRow:
+    idx: int
     task_id: str
     completion: str
 
