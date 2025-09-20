@@ -43,20 +43,14 @@ def main():
             base_seed = 1337 + 1000 * ti + j
             completion = ""
             attempts: List[AttemptRecord] = []
-            augmented_prompt = prompt
             # try up to MAX_RETRIES times
             for attempt in range(MAX_RETRIES + 1):
                 seed = base_seed + attempt
                 temperature = TEMP if attempt == 0 else RETRY_TEMP
-                if attempt > 0:
-                    augmented_prompt = (
-                        f"{prompt}\n# Reminder: Start each line with 4 spaces for proper indentation. "
-                        "Example: '    return None' (4 spaces before 'return')."
-                    )
 
                 result = cast(
                     GenerationResult,
-                    ollama_generate(augmented_prompt, seed=seed, temperature=temperature),
+                    ollama_generate(prompt, seed=seed, temperature=temperature),
                 )
                 raw_text_value = result.get("text")
                 raw_text = raw_text_value if isinstance(raw_text_value, str) else ""
@@ -64,7 +58,7 @@ def main():
                 raw_response: Optional[object] = result.get("raw_response")
                 attempts.append(
                     {
-                        "prompt": augmented_prompt,
+                        "prompt": prompt,
                         "seed": seed,
                         "temperature": temperature,
                         "raw_text": raw_text,
