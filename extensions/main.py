@@ -12,6 +12,7 @@ Outputs:
 '''
 from typing import Dict, Iterable, List, Optional, cast
 from human_eval.data import read_problems, write_jsonl
+from human_eval.evaluation import evaluate_functional_correctness
 from constants import K, LIMIT, TEMP, RETRY_TEMP, MAX_RETRIES
 from ollama_client import ollama_generate
 from schemas import (
@@ -103,10 +104,26 @@ def main():
     # Write outputs
     write_jsonl("samples.jsonl", cast(Iterable[JsonDict], samples))
     print(f"Wrote {len(samples)} samples across {len(task_ids)} tasks (k={K}) → samples.jsonl")
+    
     # Debug info for empty completions (generally caused by reasoning consuming more tokens than given)
     if empty_samples:
         write_jsonl("empty_samples.jsonl", cast(Iterable[JsonDict], empty_samples))
         print(f"Captured {len(empty_samples)} problem completions → empty_samples.jsonl")
+
+    # Run functional evaluation on generated samples and report pass@k
+    eval_ks = sorted({k for k in (1, K) if k > 0})
+    print(f"Evaluating functional correctness for k={eval_ks} ...")
+    try:
+        pass_at_k = evaluate_functional_correctness("samples.jsonl", k=eval_ks)
+    # Eval failures don't crash generation
+    except Exception as exc:
+        print(f"[error] Evaluation failed: {exc}")
+    else:
+        if pass_at_k:
+            metrics = ", ".join(f"{metric}={value:.4f}" for metric, value in pass_at_k.items())
+            print(f"pass@k → {metrics}")
+        else:
+            print("[warn] Evaluation produced no pass@k metrics; ensure each task has ≥ k samples.")
 
 
 if __name__ == "__main__":
