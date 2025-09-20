@@ -1,4 +1,4 @@
-# ~/process_human_eval.py
+# ~/extensions/process_human_eval.py
 '''
 Downloads and processes the HumanEval dataset from OpenAI
 
