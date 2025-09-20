@@ -12,7 +12,7 @@ Outputs:
 '''
 from typing import Dict, Iterable, List, Optional, cast
 from human_eval.data import read_problems, write_jsonl
-from human_eval.evaluation import evaluate_functional_correctness
+from custom_evaluation import evaluate_functional_correctness_subset
 from constants import K, LIMIT, TEMP, RETRY_TEMP, MAX_RETRIES
 from ollama_client import ollama_generate
 from schemas import (
@@ -114,7 +114,7 @@ def main():
     eval_ks = sorted({k for k in (1, K) if k > 0})
     print(f"Evaluating functional correctness for k={eval_ks} ...")
     try:
-        pass_at_k = evaluate_functional_correctness("samples.jsonl", k=eval_ks)
+        pass_at_k = evaluate_functional_correctness_subset("samples.jsonl", k=eval_ks)
     # Eval failures don't crash generation
     except Exception as exc:
         print(f"[error] Evaluation failed: {exc}")
