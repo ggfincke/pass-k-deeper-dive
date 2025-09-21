@@ -10,6 +10,7 @@ Outputs:
     - empty_samples.jsonl  : Debug info for problems that produced empty completions
 
 '''
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, cast
 from human_eval.data import read_problems, write_jsonl
 from custom_evaluation import evaluate_functional_correctness_subset
@@ -25,6 +26,20 @@ from schemas import (
 
 # Main execution
 def main():
+    # create results dir
+    repo_root = Path(__file__).resolve().parents[1]
+    results_dir = repo_root / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    samples_path = results_dir / "samples.jsonl"
+    empty_samples_path = results_dir / "empty_samples.jsonl"
+
+    # format paths relative to repo root
+    def fmt(path: Path) -> str:
+        try:
+            return str(path.relative_to(repo_root))
+        except ValueError:
+            return str(path)
+
     # Read HumanEval problems
     problems: Dict[str, Dict] = read_problems()
     task_ids = sorted(problems.keys())
@@ -95,19 +110,24 @@ def main():
             samples.append({"task_id": tid, "completion": completion})
 
     # Write outputs
-    write_jsonl("samples.jsonl", cast(Iterable[JsonDict], samples))
-    print(f"Wrote {len(samples)} samples across {len(task_ids)} tasks (k={K}) -> samples.jsonl")
-    
+    write_jsonl(str(samples_path), cast(Iterable[JsonDict], samples))
+    print(
+        "Wrote "
+        f"{len(samples)} samples across {len(task_ids)} tasks (k={K}) -> {fmt(samples_path)}"
+    )
+
     # Debug info for empty completions (generally caused by reasoning consuming more tokens than given)
     if empty_samples:
-        write_jsonl("empty_samples.jsonl", cast(Iterable[JsonDict], empty_samples))
-        print(f"Captured {len(empty_samples)} problem completions -> empty_samples.jsonl")
+        write_jsonl(str(empty_samples_path), cast(Iterable[JsonDict], empty_samples))
+        print(
+            f"Captured {len(empty_samples)} problem completions -> {fmt(empty_samples_path)}"
+        )
 
     # Run functional evaluation on generated samples and report pass@k
     eval_ks = sorted({k for k in (1, K) if k > 0})
     print(f"Evaluating functional correctness for k={eval_ks} ...")
     try:
-        pass_at_k = evaluate_functional_correctness_subset("samples.jsonl", k=eval_ks)
+        pass_at_k = evaluate_functional_correctness_subset(str(samples_path), k=eval_ks)
     # Eval failures don't crash generation
     except Exception as exc:
         print(f"[error] Evaluation failed: {exc}")
