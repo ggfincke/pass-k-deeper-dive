@@ -1,21 +1,16 @@
-# ~/extensions/constants.py
+# ~/extensions/config.py
 """
-Constants shared across scripts.
+Shared configuration resolved from environment variables.
 
-These surface constant values that are consumed in separate modules
+Provides constants used by generation, evaluation, and visualization modules.
 """
 
+# imports
 import os
 from typing import Optional
 
 
-# URL of the local Ollama server; override via env when pointing elsewhere
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-# Model name served by Ollama; must appear in 'ollama list'
-MODEL = os.getenv("MODEL", "gpt-oss:20b")
-# Number of completions to sample per HumanEval task
-K = int(os.getenv("K", "100"))
-
+# Interpret LIMIT semantics from environment values
 def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     if raw is None:
         return default
@@ -25,6 +20,13 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     value = int(normalized)
     return None if value <= 0 else value
 
+
+# URL of the local Ollama server; override via env when pointing elsewhere
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+# Model name served by Ollama; must appear in 'ollama list'
+MODEL = os.getenv("MODEL", "gpt-oss:20b")
+# Number of completions to sample per HumanEval task
+K = int(os.getenv("K", "100"))
 # Maximum number of HumanEval tasks to process; None means all tasks
 LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
@@ -33,9 +35,9 @@ TEMP = float(os.getenv("TEMP", "0.2"))
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "131072"))
 # Retry budget when the model returns empty completions
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
-# nucleus sampling parameter (set to 1.0 for pure sampling)
+# Nucleus sampling parameter (set to 1.0 for pure sampling)
 TOP_P = float(os.getenv("TOP_P", "1.0"))
-# top-k sampling cutoff; zero disables the constraint
+# Top-k sampling cutoff; zero disables the constraint
 TOP_K = int(os.getenv("TOP_K", "0"))
 # Penalty applied to repeated tokens to reduce loops
 REPEAT_PENALTY = float(os.getenv("REPEAT_PENALTY", "1.0"))
@@ -55,3 +57,19 @@ SYSTEM = (
     "• Do NOT include top-level comments or print statements.\n"
     "• No leading blank lines. End with a single trailing newline.\n"
 )
+
+__all__ = [
+    "OLLAMA_URL",
+    "MODEL",
+    "K",
+    "LIMIT",
+    "TEMP",
+    "MAX_NEW_TOKENS",
+    "MAX_RETRIES",
+    "TOP_P",
+    "TOP_K",
+    "REPEAT_PENALTY",
+    "STOP_SEQS",
+    "SYSTEM",
+]
+

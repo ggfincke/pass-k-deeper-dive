@@ -1,29 +1,34 @@
-# ~/extensions/visualizations/plotting.py
+# ~/extensions/visualization/plots.py
 """
-Visualization functions for creating charts and plots of evaluation metrics.
+Plotting helpers for evaluation metrics.
+
+Provides figure-generation utilities used by the visualization CLI.
 """
 
+# imports
 from pathlib import Path
-import pandas as pd
+
 import matplotlib.pyplot as plt
-
-from .utils import read_results_jsonl
-from .metrics import compute_per_task, compute_macro
+import pandas as pd
 
 
-# Plot pass@k curve with coverage annotations
-def plot_pass_vs_k_with_coverage(macro_df: pd.DataFrame, title: str, out_path: Path):
+# Plot the pass@k curve with coverage annotations
+def plot_pass_vs_k_with_coverage(macro_df: pd.DataFrame, title: str, out_path: Path) -> None:
     plt.figure()
     xs = macro_df["k"].tolist()
     ys = macro_df["pass@k_macro"].tolist()
     plt.plot(xs, ys, marker="o", label="pass@k (macro)")
-    
-    # annotate coverage as text near each point
+
     covs = macro_df["coverage@k"].tolist()
-    for x, y, c in zip(xs, ys, covs):
-        plt.annotate(f"coverage={c:.2f}", (x, y), textcoords="offset points", 
-                    xytext=(0,10), ha='center')
-    
+    for x, y, coverage in zip(xs, ys, covs):
+        plt.annotate(
+            f"coverage={coverage:.2f}",
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+        )
+
     plt.title(title)
     plt.xlabel("k")
     plt.ylabel("pass@k (macro)")
@@ -34,11 +39,11 @@ def plot_pass_vs_k_with_coverage(macro_df: pd.DataFrame, title: str, out_path: P
     print(f"Saved: {out_path}")
 
 
-# Plot histogram of duplicates collapsed per task
-def plot_duplicates_hist(per_task_df: pd.DataFrame, title: str, out_path: Path):
+# Plot a histogram of duplicates collapsed per task
+def plot_duplicates_hist(per_task_df: pd.DataFrame, title: str, out_path: Path) -> None:
     plt.figure()
     data = per_task_df["duplicates_collapsed"].tolist()
-    if len(data) == 0:
+    if not data:
         data = [0]
     bins = range(int(max(data)) + 2)
     plt.hist(data, bins=bins)
@@ -50,14 +55,21 @@ def plot_duplicates_hist(per_task_df: pd.DataFrame, title: str, out_path: Path):
     print(f"Saved: {out_path}")
 
 
-# Compare pass@k curves between two evaluation runs
-def compare_two_runs(file_a: Path, file_b: Path, label_a: str, label_b: str, out_path: Path):
+# Compare two runs by plotting their pass@k curves
+def compare_two_runs(file_a: Path, file_b: Path, label_a: str, label_b: str, out_path: Path) -> None:
+    from extensions.visualization.io import read_results_jsonl
+    from extensions.visualization.metrics import compute_macro, compute_per_task
+
     rows_a = read_results_jsonl(file_a)
     rows_b = read_results_jsonl(file_b)
     df_a = compute_per_task(rows_a)
     df_b = compute_per_task(rows_b)
-    max_k = int(max(df_a["n_unique"].max() if not df_a.empty else 0,
-                    df_b["n_unique"].max() if not df_b.empty else 0))
+    max_k = int(
+        max(
+            df_a["n_unique"].max() if not df_a.empty else 0,
+            df_b["n_unique"].max() if not df_b.empty else 0,
+        )
+    )
     macro_a = compute_macro(df_a, max_k=max_k)
     macro_b = compute_macro(df_b, max_k=max_k)
 
@@ -72,3 +84,11 @@ def compare_two_runs(file_a: Path, file_b: Path, label_a: str, label_b: str, out
     plt.tight_layout()
     plt.savefig(out_path)
     print(f"Saved: {out_path}")
+
+
+__all__ = [
+    "plot_pass_vs_k_with_coverage",
+    "plot_duplicates_hist",
+    "compare_two_runs",
+]
+
