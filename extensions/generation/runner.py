@@ -6,13 +6,14 @@ Manages retry policy, writes artifacts, and optionally triggers evaluation.
 """
 
 # imports
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, cast
+from typing import Dict, Iterable, List, Optional, Tuple, cast
 
 from human_eval.data import read_problems, write_jsonl
 
 from extensions.clients.ollama import generate as ollama_generate
-from extensions.config import K, LIMIT, MAX_RETRIES, TEMP
+from extensions.config import CONCURRENCY, K, LIMIT, MAX_RETRIES, TEMP
 from extensions.evaluation.functional import evaluate_functional_correctness_subset
 from extensions.generation.records import (
     AttemptRecord,
@@ -52,8 +53,12 @@ def generate_humaneval_completions(
 
     for ti, task_id in enumerate(task_ids):
         prompt = problems[task_id]["prompt"]
-        for j in range(K):
-            base_seed = 1337 + 1000 * ti + j
+
+        if K <= 0:
+            continue
+
+        def _sample_once(sample_idx: int) -> Tuple[SampleRecord, Optional[EmptySampleRecord]]:
+            base_seed = 1337 + 1000 * ti + sample_idx
             completion = ""
             attempts: List[AttemptRecord] = []
 
@@ -89,29 +94,46 @@ def generate_humaneval_completions(
                         )
                     break
 
+            empty_record: Optional[EmptySampleRecord] = None
             if not completion.strip():
                 print(
                     f"[warn] Empty completion for {task_id} after {MAX_RETRIES + 1} attempts; falling back to 'pass'"
                 )
                 completion = "    pass\n"
-                empty_samples.append(
-                    {
-                        "task_id": task_id,
-                        "resolved": False,
-                        "attempts": attempts,
-                    }
-                )
+                empty_record = {
+                    "task_id": task_id,
+                    "resolved": False,
+                    "attempts": attempts,
+                }
             elif not attempts[0]["completion"].strip():
-                empty_samples.append(
-                    {
-                        "task_id": task_id,
-                        "resolved": True,
-                        "attempts": attempts,
-                        "final_completion": completion,
-                    }
-                )
+                empty_record = {
+                    "task_id": task_id,
+                    "resolved": True,
+                    "attempts": attempts,
+                    "final_completion": completion,
+                }
 
-            samples.append({"task_id": task_id, "completion": completion})
+            return (
+                {"task_id": task_id, "completion": completion},
+                empty_record,
+            )
+
+        futures = {}
+        results: Dict[int, Tuple[SampleRecord, Optional[EmptySampleRecord]]] = {}
+        max_workers = min(CONCURRENCY, K)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for j in range(K):
+                futures[executor.submit(_sample_once, j)] = j
+
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                results[idx] = fut.result()
+
+        for j in range(K):
+            sample_record, empty_record = results[j]
+            samples.append(sample_record)
+            if empty_record:
+                empty_samples.append(empty_record)
 
     write_jsonl(str(samples_path), cast(Iterable[Dict[str, object]], samples))
     print(
@@ -158,4 +180,3 @@ def generate_humaneval_completions(
 
 
 __all__ = ["generate_humaneval_completions"]
-

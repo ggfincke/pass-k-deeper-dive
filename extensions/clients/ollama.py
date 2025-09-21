@@ -13,6 +13,7 @@ import requests
 from extensions.config import (
     MAX_NEW_TOKENS,
     MODEL,
+    OLLAMA_OPTIONS,
     OLLAMA_URL,
     REPEAT_PENALTY,
     STOP_SEQS,
@@ -30,7 +31,8 @@ def _clean_options(options: Dict[str, object]) -> Dict[str, object]:
 
 # Issue a generation request and return text plus raw response
 def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, object]:
-    options = _clean_options(
+    options = dict(OLLAMA_OPTIONS)
+    options.update(
         {
             "temperature": temperature,
             "num_predict": MAX_NEW_TOKENS,
@@ -41,6 +43,7 @@ def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, obj
             "stop": (STOP_SEQS if STOP_SEQS else None),
         }
     )
+    options = _clean_options(options)
     payload = {
         "model": MODEL,
         "system": SYSTEM,
@@ -58,4 +61,3 @@ def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, obj
 
 
 __all__ = ["generate"]
-

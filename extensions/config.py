@@ -7,7 +7,7 @@ Provides constants used by generation, evaluation, and visualization modules.
 
 # imports
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 
 # Interpret LIMIT semantics from environment values
@@ -27,10 +27,18 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.getenv("MODEL", "gpt-oss:20b")
 # Number of completions to sample per HumanEval task
 K = int(os.getenv("K", "100"))
+# Concurrent generation workers when sampling pass@k completions
+CONCURRENCY = max(1, int(os.getenv("CONCURRENCY", "3")))
 # Maximum number of HumanEval tasks to process; None means all tasks
 LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
 TEMP = float(os.getenv("TEMP", "0.2"))
+# Model options forwarded to Ollama for GPU-friendly defaults
+OLLAMA_OPTIONS: Dict[str, object] = {
+    "num_ctx": 4096,
+    "num_batch": 64,
+    "temperature": TEMP,
+}
 # Upper bound on new tokens produced per completion
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "131072"))
 # Retry budget when the model returns empty completions
@@ -62,8 +70,10 @@ __all__ = [
     "OLLAMA_URL",
     "MODEL",
     "K",
+    "CONCURRENCY",
     "LIMIT",
     "TEMP",
+    "OLLAMA_OPTIONS",
     "MAX_NEW_TOKENS",
     "MAX_RETRIES",
     "TOP_P",
@@ -72,4 +82,3 @@ __all__ = [
     "STOP_SEQS",
     "SYSTEM",
 ]
-
