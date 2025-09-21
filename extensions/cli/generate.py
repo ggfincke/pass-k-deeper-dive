@@ -11,15 +11,34 @@ Outputs:
     - samples.jsonl_results.jsonl : Evaluation results with pass/fail metadata
 '''
 
+from __future__ import annotations
+
 # imports
+import argparse
+from typing import Optional, Sequence
+
 from extensions.generation.runner import generate_humaneval_completions
 
 
-# Run generation with default configuration
-def main() -> None:
-    generate_humaneval_completions()
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Generate HumanEval completions using the configured Ollama backend.",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show debugging output during generation.",
+    )
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    generate_humaneval_completions(verbose=args.verbose)
 
 
 if __name__ == "__main__":
     main()
-
