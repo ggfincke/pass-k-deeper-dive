@@ -49,6 +49,8 @@ def generate_humaneval_completions(
     if LIMIT is not None:
         task_ids = task_ids[:LIMIT]
 
+    total_tasks = len(task_ids)
+
     samples: List[SampleRecord] = []
     empty_samples: List[EmptySampleRecord] = []
 
@@ -68,7 +70,7 @@ def generate_humaneval_completions(
     )
     _debug(
         "Generation parameters -> "
-        f"TOTAL_TASKS={len(problems)}, ACTIVE_TASKS={len(task_ids)}, RUN_EVAL={run_evaluation}"
+        f"TOTAL_TASKS={len(problems)}, ACTIVE_TASKS={total_tasks}, RUN_EVAL={run_evaluation}"
     )
     if verbose and task_ids:
         preview_ids = ", ".join(task_ids[:5])
@@ -191,6 +193,14 @@ def generate_humaneval_completions(
         _debug(
             f"{task_id}: collected {K} sample(s); empty recovery count={sum(1 for _, rec in results.values() if rec)}"
         )
+
+        completed = ti + 1
+        if total_tasks > 0:
+            percent = (completed / total_tasks) * 100
+            print(
+                f"[progress] Completed {completed}/{total_tasks} tasks ({percent:5.1f}%)",
+                flush=True,
+            )
 
     write_jsonl(str(samples_path), cast(Iterable[Dict[str, object]], samples))
     print(
