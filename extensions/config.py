@@ -21,6 +21,40 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     return None if value <= 0 else value
 
 
+def _looks_like_os_tempdir(value: str) -> bool:
+    normalized = value.strip()
+    if not normalized:
+        return False
+    if any(sep in normalized for sep in ("/", "\\")):
+        return True
+    if os.name == "nt" and ":" in normalized:
+        return True
+    return False
+
+
+def _resolve_temperature(default: float) -> float:
+    candidates = (
+        ("PASSK_TEMPERATURE", os.getenv("PASSK_TEMPERATURE")),
+        ("PASSK_TEMP", os.getenv("PASSK_TEMP")),
+        ("TEMP", os.getenv("TEMP")),
+    )
+    for name, raw in candidates:
+        if raw is None:
+            continue
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        try:
+            return float(cleaned)
+        except ValueError as exc:
+            if name == "TEMP" and _looks_like_os_tempdir(cleaned):
+                continue
+            raise ValueError(
+                f"Environment variable {name} must be a float; received {raw!r}"
+            ) from exc
+    return default
+
+
 # URL of the local Ollama server; override via env when pointing elsewhere
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Model name served by Ollama; must appear in 'ollama list'
@@ -36,7 +70,8 @@ CONCURRENCY = max(1, int(os.getenv("CONCURRENCY", "5")))
 # Maximum number of HumanEval tasks to process; None means all tasks
 LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
-TEMP = float(os.getenv("TEMP", "0.8"))
+DEFAULT_TEMP = 0.2
+TEMP = _resolve_temperature(DEFAULT_TEMP)
 # Model options forwarded to Ollama for GPU-friendly defaults
 OLLAMA_OPTIONS: Dict[str, object] = {
     "num_ctx": 16384,
