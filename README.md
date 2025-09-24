@@ -36,7 +36,8 @@ ollama pull gpt-oss:20b  # requires about 13GB of storage
 # Customize by editing 'extensions/config.py'
 # Default values from config.py:
 MODEL = "gpt-oss:20b"
-K = 5                     # 'k' in pass@k
+N_SAMPLES = 5             # generation budget (completions sampled per task)
+EVAL_KS = [1, 5, 10, 25]  # pass@k / coverage@k evaluation targets
 LIMIT = 10                # None means all 164 tasks
 MAX_NEW_TOKENS = 131072   # max context window in gpt-oss
 TEMP = 0.2
@@ -52,20 +53,20 @@ python -m extensions.cli.generate
 - **results/samples.jsonl** — all non-empty completions
 - **results/empty_samples.jsonl** — tasks that needed a fallback stub (for debugging)
 - **results/samples.jsonl_results.jsonl** — evaluation verdicts for each sample
-- **Console** — unbiased pass@k (for k in [1, K]) and coverage@k for the subset
+- **Console** — unbiased pass@k / coverage@k (for each k in `EVAL_KS`) plus n_unique diagnostics
 
 # Usage
 
 ### A) Generate with Ollama and evaluate automatically
 
-[`extensions/cli/generate.py`](extensions/cli/generate.py) reads tasks, samples K completions (with retries on empty), writes artifacts, then runs the evaluator for you.
+[`extensions/cli/generate.py`](extensions/cli/generate.py) reads tasks, samples `N_SAMPLES` completions (with retries on empty), writes artifacts, then runs the evaluator for you.
 ```bash
 python -m extensions.cli.generate
 ```
 Tune via environment variables documented in [`extensions/config.py`](extensions/config.py):
 - `OLLAMA_URL` (default http://localhost:11434)
 - `MODEL` (default gpt-oss:20b)
-- `K`, `LIMIT` (0 -> all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
+- `N_SAMPLES`, `EVAL_KS`, `LIMIT` (0 -> all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
 - `MAX_NEW_TOKENS`, `MAX_RETRIES`, `STOP`
 
 ### B) Evaluate an existing JSONL (subset-safe)
@@ -74,9 +75,10 @@ If you already have completions (from this repo or elsewhere), call:
 ```python
 from extensions.evaluation.functional import evaluate_functional_correctness_subset
 
-evaluate_functional_correctness_subset("results/samples.jsonl", k=[1, 5])
+# Uses EVAL_KS from config.py by default; override via k=[...] if desired
+evaluate_functional_correctness_subset("results/samples.jsonl")
 ```
-This writes `results/samples.jsonl_results.jsonl` with per-sample pass/fail verdicts and prints pass@k + coverage@k.
+This writes `results/samples.jsonl_results.jsonl` with per-sample pass/fail verdicts and prints pass@k, coverage@k, and n_unique diagnostics.
 
 ### C) Download and export HumanEval
 ```bash
@@ -109,6 +111,7 @@ extensions/
 - **Sampling variance**: pass@k moves with temperature/top-p/top-k; keep these fixed when comparing models.
 - **Subsets**: prefer larger `LIMIT` (or 0) so more tasks meet n ≥ k.
 - **Duplicates**: completions are normalized and deduped before counting to avoid inflated pass@k.
+- **Budgeting samples**: pick `N_SAMPLES` so expected `n_unique ≥ max(EVAL_KS)`; e.g., with a 0.16 unique rate and `k=25`, target `N_SAMPLES ≈ 150–200`.
 
 # Troubleshooting
 

@@ -25,18 +25,22 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Model name served by Ollama; must appear in 'ollama list'
 MODEL = os.getenv("MODEL", "gpt-oss:20b")
-# Number of completions to sample per HumanEval task
-K = int(os.getenv("K", "10"))
+# MODEL = os.getenv("MODEL", "deepseek-r1:14b")
+# Generation budget per HumanEval task.
+N_SAMPLES = int(os.getenv("N_SAMPLES", "100"))
+# Evaluation ks (comma-separated ints) applied during pass@k computation
+_raw_eval = os.getenv("EVAL_KS", "1,5,10,25")
+EVAL_KS = [int(x.strip()) for x in _raw_eval.split(",") if x.strip()]
 # Concurrent generation workers when sampling pass@k completions
 CONCURRENCY = max(1, int(os.getenv("CONCURRENCY", "5")))
 # Maximum number of HumanEval tasks to process; None means all tasks
-LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=10)
+LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
-TEMP = float(os.getenv("TEMP", "0.2"))
+TEMP = float(os.getenv("TEMP", "0.8"))
 # Model options forwarded to Ollama for GPU-friendly defaults
 OLLAMA_OPTIONS: Dict[str, object] = {
-    # "num_ctx": 16384,
-    # "num_batch": 256,
+    "num_ctx": 16384,
+    "num_batch": 256,
     "temperature": TEMP,
 }
 # Upper bound on new tokens produced per completion
@@ -69,7 +73,8 @@ SYSTEM = (
 __all__ = [
     "OLLAMA_URL",
     "MODEL",
-    "K",
+    "N_SAMPLES",
+    "EVAL_KS",
     "CONCURRENCY",
     "LIMIT",
     "TEMP",

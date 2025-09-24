@@ -7,14 +7,15 @@ Loads generated completions, executes reference tests, and reports pass@k metric
 
 # imports
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Union
+from collections import Counter, defaultdict
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
 from human_eval.data import read_problems, stream_jsonl, write_jsonl
 from human_eval.execution import check_correctness
 
-from extensions.config import K
+from extensions.config import EVAL_KS
 from extensions.evaluation.metrics import (
     bootstrap_ci,
     estimate_pass_at_k_vector,
@@ -26,11 +27,11 @@ from extensions.generation.records import SampleRow
 # Evaluate pass@k metrics for a subset of HumanEval samples
 def evaluate_functional_correctness_subset(
     sample_file: str,
-    k: Union[int, List[int]] = (1, K),
+    k: Optional[Union[int, Sequence[int]]] = None,
     timeout: float = 10.0,
     n_workers: int = 8,
     compute_ci: bool = False,
-) -> Dict[str, float]:
+) -> Dict[str, object]:
     problems = read_problems()
 
     rows: List[SampleRow] = []
@@ -52,34 +53,88 @@ def evaluate_functional_correctness_subset(
             row = futures[fut]
             results_by_idx[row.idx] = fut.result()
 
-    per_task_norm_to_firstpass: Dict[str, Dict[str, bool]] = {}
-    per_task_all_passes: Dict[str, List[bool]] = {}
+    per_task_norm_to_firstpass: Dict[str, Dict[str, bool]] = defaultdict(dict)
+    per_task_unique_passes: Dict[str, List[bool]] = defaultdict(list)
+    per_task_total_counts: Counter[str] = Counter()
 
     for row in rows:
         res = results_by_idx[row.idx]
         passed = bool(res.get("passed", False))
         key = normalize_code(row.completion)
-        per_task_norm_to_firstpass.setdefault(row.task_id, {})
-        per_task_all_passes.setdefault(row.task_id, [])
+        per_task_total_counts[row.task_id] += 1
 
         if key not in per_task_norm_to_firstpass[row.task_id]:
             per_task_norm_to_firstpass[row.task_id][key] = passed
-            per_task_all_passes[row.task_id].append(passed)
+            per_task_unique_passes[row.task_id].append(passed)
 
-    task_ids = sorted(per_task_all_passes.keys())
-    n = np.array([len(per_task_all_passes[tid]) for tid in task_ids], dtype=int)
-    c = np.array([sum(per_task_all_passes[tid]) for tid in task_ids], dtype=int)
+    task_ids = sorted(per_task_total_counts.keys())
+    n_unique = np.array([len(per_task_unique_passes[tid]) for tid in task_ids], dtype=int)
+    c_unique = np.array([sum(per_task_unique_passes[tid]) for tid in task_ids], dtype=int)
 
-    ks = [k] if isinstance(k, int) else list(k)
-    metrics: Dict[str, float] = {}
+    resolved_k: Sequence[int]
+    if k is None:
+        resolved_k = EVAL_KS
+    elif isinstance(k, int):
+        resolved_k = [k]
+    else:
+        resolved_k = list(k)
+
+    ks = sorted({kk for kk in resolved_k if kk > 0})
+
+    def _naive_pass_at_k_vector(n: np.ndarray, c: np.ndarray, k: int) -> np.ndarray:
+        out = np.full_like(n, np.nan, dtype=float)
+        mask = n > 0
+        if not np.any(mask):
+            return out
+
+        n_f = n[mask].astype(float)
+        c_f = c[mask].astype(float)
+        vals = 1.0 - np.power(1.0 - (c_f / n_f), k)
+        out[mask] = np.clip(vals, 0.0, 1.0)
+        return out
+
+    metrics: Dict[str, object] = {}
     for kk in ks:
-        vals = estimate_pass_at_k_vector(n, c, kk)
+        vals = estimate_pass_at_k_vector(n_unique, c_unique, kk)
         metrics[f"pass@{kk}"] = float(np.nanmean(vals))
-        metrics[f"coverage@{kk}"] = float(np.mean(n >= kk))
+        metrics[f"coverage@{kk}"] = float(np.mean(n_unique >= kk))
         if compute_ci:
             lo, hi = bootstrap_ci(vals)
             metrics[f"ci@{kk}.lo"] = lo
             metrics[f"ci@{kk}.hi"] = hi
+
+        naive_vals = _naive_pass_at_k_vector(n_unique, c_unique, kk)
+        metrics[f"naive_pass@{kk}"] = float(np.nanmean(naive_vals))
+
+    per_task_counts = {
+        tid: {
+            "n_total": per_task_total_counts[tid],
+            "n_unique": len(per_task_unique_passes[tid]),
+            "n_correct_unique": sum(per_task_unique_passes[tid]),
+        }
+        for tid in task_ids
+    }
+
+    unique_hist = Counter(counts["n_unique"] for counts in per_task_counts.values())
+    metrics["per_task_counts"] = per_task_counts
+    metrics["n_unique_histogram"] = dict(sorted(unique_hist.items()))
+
+    if task_ids:
+        n_unique_stats = {
+            "min": int(n_unique.min()),
+            "median": float(np.median(n_unique)),
+            "mean": float(np.mean(n_unique)),
+            "max": int(n_unique.max()),
+        }
+    else:
+        n_unique_stats = {
+            "min": None,
+            "median": None,
+            "mean": None,
+            "max": None,
+        }
+
+    metrics["n_unique_stats"] = n_unique_stats
 
     # Yield evaluation rows with verdicts
     def _combine():
@@ -99,4 +154,3 @@ def evaluate_functional_correctness_subset(
 
 
 __all__ = ["evaluate_functional_correctness_subset"]
-

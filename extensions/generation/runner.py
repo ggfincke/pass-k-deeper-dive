@@ -13,7 +13,7 @@ from typing import Dict, Iterable, List, Optional, Tuple, cast
 from human_eval.data import read_problems, write_jsonl
 
 from extensions.clients.ollama import generate as ollama_generate
-from extensions.config import CONCURRENCY, K, LIMIT, MAX_RETRIES, TEMP
+from extensions.config import CONCURRENCY, EVAL_KS, LIMIT, MAX_RETRIES, N_SAMPLES, TEMP
 from extensions.evaluation.functional import evaluate_functional_correctness_subset
 from extensions.generation.records import (
     AttemptRecord,
@@ -66,7 +66,7 @@ def generate_humaneval_completions(
     )
     _debug(
         "Config -> "
-        f"K={K}, CONCURRENCY={CONCURRENCY}, LIMIT={LIMIT}, TEMP={TEMP}, MAX_RETRIES={MAX_RETRIES}"
+        f"N_SAMPLES={N_SAMPLES}, CONCURRENCY={CONCURRENCY}, LIMIT={LIMIT}, TEMP={TEMP}, MAX_RETRIES={MAX_RETRIES}"
     )
     _debug(
         "Generation parameters -> "
@@ -81,10 +81,10 @@ def generate_humaneval_completions(
     for ti, task_id in enumerate(task_ids):
         prompt = problems[task_id]["prompt"]
 
-        if K <= 0:
+        if N_SAMPLES <= 0:
             continue
 
-        _debug(f"{task_id}: scheduling {K} sample(s) with base index {ti}")
+        _debug(f"{task_id}: scheduling {N_SAMPLES} sample(s) with base index {ti}")
 
         def _sample_once(sample_idx: int) -> Tuple[SampleRecord, Optional[EmptySampleRecord]]:
             base_seed = 1337 + 1000 * ti + sample_idx
@@ -175,23 +175,23 @@ def generate_humaneval_completions(
 
         futures = {}
         results: Dict[int, Tuple[SampleRecord, Optional[EmptySampleRecord]]] = {}
-        max_workers = min(CONCURRENCY, K)
+        max_workers = min(CONCURRENCY, N_SAMPLES)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for j in range(K):
+            for j in range(N_SAMPLES):
                 futures[executor.submit(_sample_once, j)] = j
 
             for fut in as_completed(futures):
                 idx = futures[fut]
                 results[idx] = fut.result()
 
-        for j in range(K):
+        for j in range(N_SAMPLES):
             sample_record, empty_record = results[j]
             samples.append(sample_record)
             if empty_record:
                 empty_samples.append(empty_record)
 
         _debug(
-            f"{task_id}: collected {K} sample(s); empty recovery count={sum(1 for _, rec in results.values() if rec)}"
+            f"{task_id}: collected {N_SAMPLES} sample(s); empty recovery count={sum(1 for _, rec in results.values() if rec)}"
         )
 
         completed = ti + 1
@@ -205,7 +205,7 @@ def generate_humaneval_completions(
     write_jsonl(str(samples_path), cast(Iterable[Dict[str, object]], samples))
     print(
         "Wrote "
-        f"{len(samples)} samples across {len(task_ids)} tasks (k={K}) -> "
+        f"{len(samples)} samples across {len(task_ids)} tasks (n_total={N_SAMPLES}) -> "
         f"{_format_relative(samples_path, repo_root)}"
     )
 
@@ -221,9 +221,9 @@ def generate_humaneval_completions(
         )
         _debug(f"Empty sample records persisted for {len(empty_samples)} task(s)")
 
-    metrics: Optional[Dict[str, float]] = None
+    metrics: Optional[Dict[str, object]] = None
     if run_evaluation:
-        eval_ks = sorted({k for k in (1, K) if k > 0})
+        eval_ks = sorted({k for k in EVAL_KS if k > 0})
         print(f"Evaluating functional correctness for k={eval_ks} ...")
         _debug(f"Evaluation request -> samples_path={samples_path}, eval_ks={eval_ks}")
         try:
@@ -233,10 +233,88 @@ def generate_humaneval_completions(
             _debug("Evaluation raised exception; continuing without metrics")
         else:
             if metrics:
-                formatted = ", ".join(
-                    f"{metric}={value:.4f}" for metric, value in metrics.items()
-                )
-                print(f"pass@k -> {formatted}")
+                per_task_counts = cast(Dict[str, Dict[str, int]], metrics.get("per_task_counts", {}))
+                unique_hist = cast(Dict[int, int], metrics.get("n_unique_histogram", {}))
+                n_unique_stats = cast(Dict[str, Optional[float]], metrics.get("n_unique_stats", {}))
+
+                scalar_metrics = {
+                    metric: value
+                    for metric, value in metrics.items()
+                    if metric not in {"per_task_counts", "n_unique_histogram", "n_unique_stats"}
+                }
+
+                pass_entries = []
+                naive_entries = []
+                coverage_entries = []
+                for kk in eval_ks:
+                    pass_key = f"pass@{kk}"
+                    naive_key = f"naive_pass@{kk}"
+                    coverage_key = f"coverage@{kk}"
+                    if pass_key in scalar_metrics:
+                        pass_entries.append(f"{pass_key}={scalar_metrics[pass_key]:.4f}")
+                    if naive_key in scalar_metrics:
+                        naive_entries.append(
+                            f"{naive_key}={scalar_metrics[naive_key]:.4f}"
+                        )
+                    if coverage_key in scalar_metrics:
+                        coverage_entries.append(
+                            f"{coverage_key}={scalar_metrics[coverage_key]:.4f}"
+                        )
+
+                if pass_entries:
+                    print(f"pass@k (unbiased) -> {', '.join(pass_entries)}")
+                if naive_entries:
+                    print(f"pass@k (naive) -> {', '.join(naive_entries)}")
+                if coverage_entries:
+                    print(f"coverage@k -> {', '.join(coverage_entries)}")
+
+                if per_task_counts:
+                    observed_budget = sorted({info["n_total"] for info in per_task_counts.values()})
+                    budget_label = observed_budget[0] if len(observed_budget) == 1 else observed_budget
+                    print(f"Observed n_total per task -> {budget_label}")
+
+                    hist_str = ", ".join(
+                        f"{unique}:{count}"
+                        for unique, count in sorted(unique_hist.items())
+                    ) if unique_hist else ""
+                    print(
+                        f"n_unique histogram -> {{{hist_str}}}"
+                        if hist_str
+                        else "n_unique histogram -> {}"
+                    )
+
+                    total_unique = sum(info["n_unique"] for info in per_task_counts.values())
+                    total_samples = sum(info["n_total"] for info in per_task_counts.values())
+                    unique_rate = (total_unique / total_samples) if total_samples else 0.0
+                    mean_unique = (
+                        total_unique / len(per_task_counts)
+                        if per_task_counts
+                        else 0.0
+                    )
+                    print(
+                        f"Unique stats -> mean_n_unique={mean_unique:.2f}, unique_rate={unique_rate:.4f}"
+                    )
+
+                    if n_unique_stats:
+                        detail = ", ".join(
+                            f"{key}={value:.2f}" if isinstance(value, float) else f"{key}={value}"
+                            for key, value in (
+                                ("min", n_unique_stats.get("min")),
+                                ("median", n_unique_stats.get("median")),
+                                ("mean", n_unique_stats.get("mean")),
+                                ("max", n_unique_stats.get("max")),
+                            )
+                        )
+                        print(f"n_unique stats -> {detail}")
+
+                        max_unique = n_unique_stats.get("max")
+                        if max_unique is not None and eval_ks:
+                            max_eval = max(eval_ks)
+                            if max_unique < max_eval:
+                                print(
+                                    f"[warn] Coverage collapse: max(EVAL_KS)={max_eval} exceeds observed max n_unique={int(max_unique)}"
+                                )
+
                 _debug(f"Evaluation metrics -> {metrics}")
             else:
                 print(
