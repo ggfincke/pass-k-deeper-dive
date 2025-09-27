@@ -40,8 +40,10 @@ N_SAMPLES = 5             # generation budget (completions sampled per task)
 EVAL_KS = [1, 5, 10, 25]  # pass@k / coverage@k evaluation targets
 LIMIT = 10                # None means all 164 tasks
 MAX_NEW_TOKENS = 131072   # max context window in gpt-oss
-TEMP = 0.2
+DEFAULT_TEMP = 0.2        # override with PASSK_TEMP or PASSK_TEMPERATURE
 ```
+
+> Windows tip: the OS populates `TEMP` with a temp-directory path. When you want a different sampling temperature, set `PASSK_TEMP` or `PASSK_TEMPERATURE`. Numeric `TEMP` values are still honored when they parse as floats.
 
 Kick off a full generation + evaluation pass:
 ```bash
@@ -66,7 +68,7 @@ python -m extensions.cli.generate
 Tune via environment variables documented in [`extensions/config.py`](extensions/config.py):
 - `OLLAMA_URL` (default http://localhost:11434)
 - `MODEL` (default gpt-oss:20b)
-- `N_SAMPLES`, `EVAL_KS`, `LIMIT` (0 -> all, else ≤ 164), `TEMP`, `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
+- `N_SAMPLES`, `EVAL_KS`, `LIMIT` (0 -> all, else <= 164), `TEMP` (override via `PASSK_TEMP`/`PASSK_TEMPERATURE`), `TOP_P`, `TOP_K`, `REPEAT_PENALTY`
 - `MAX_NEW_TOKENS`, `MAX_RETRIES`, `STOP`
 
 ### B) Evaluate an existing JSONL (subset-safe)
