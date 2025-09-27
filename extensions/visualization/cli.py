@@ -17,6 +17,7 @@ Outputs:
 import argparse
 from pathlib import Path
 
+from extensions.config import MODEL, TEMP
 from extensions.visualization.io import (
     DEFAULT_RESULTS_FILE,
     DEFAULT_RESULTS_HELP,
@@ -28,6 +29,7 @@ from extensions.visualization.plots import (
     compare_two_runs,
     plot_duplicates_hist,
     plot_pass_vs_k_with_coverage,
+    plot_pass_vs_k_naive_vs_unbiased,
 )
 
 
@@ -69,18 +71,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Resolve input file path and validate existence
     results_path = resolve_in_results_dir(args.results)
     if not results_path.exists():
         raise FileNotFoundError(f"Results file not found: {results_path}")
 
     args.outdir.mkdir(parents=True, exist_ok=True)
 
+    # Load and process evaluation results
     rows = read_results_jsonl(results_path)
     per_task_df = compute_per_task(rows)
     inferred_max_k = int(per_task_df["n_unique"].max()) if not per_task_df.empty else 0
     max_k = args.max_k if args.max_k is not None else inferred_max_k
     macro_df = compute_macro(per_task_df, max_k=max_k if max_k >= 1 else None)
 
+    # Export computed metrics to CSV files
     per_task_csv = args.outdir / "per_task_metrics.csv"
     macro_csv = args.outdir / "macro_metrics.csv"
     per_task_df.to_csv(per_task_csv, index=False)
@@ -97,12 +102,22 @@ def main() -> None:
     if max_k >= 1 and not macro_df.empty:
         print(f"- pass@1 (macro): {macro_df.iloc[0]['pass@k_macro']:.3f}")
 
+    # Generate visualization plots
+    descriptor = f"{MODEL}, temp={TEMP:g}"
+
     pass_fig = args.outdir / "pass_vs_k_with_coverage.png"
+    dual_pass_fig = args.outdir / "pass_vs_k_naive_vs_unbiased.png"
     dups_fig = args.outdir / "duplicates_hist.png"
     if max_k >= 1 and not macro_df.empty:
-        plot_pass_vs_k_with_coverage(macro_df, "pass@k with coverage", pass_fig)
+        plot_pass_vs_k_with_coverage(
+            macro_df, f"pass@k with coverage — {descriptor}", pass_fig
+        )
+        plot_pass_vs_k_naive_vs_unbiased(
+            macro_df, f"pass@k naive vs unbiased — {descriptor}", dual_pass_fig
+        )
     plot_duplicates_hist(per_task_df, "Duplicates collapsed per task", dups_fig)
 
+    # Generate comparison plot if second results file provided
     if args.compare is not None:
         labels = args.labels if args.labels else ["run A", "run B"]
         compare_path = resolve_in_results_dir(args.compare)
@@ -114,4 +129,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
