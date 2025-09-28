@@ -176,13 +176,36 @@ def generate_humaneval_completions(
         futures = {}
         results: Dict[int, Tuple[SampleRecord, Optional[EmptySampleRecord]]] = {}
         max_workers = min(CONCURRENCY, N_SAMPLES)
+        
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for j in range(N_SAMPLES):
-                futures[executor.submit(_sample_once, j)] = j
+            try:
+                for j in range(N_SAMPLES):
+                    future = executor.submit(_sample_once, j)
+                    futures[future] = j
 
-            for fut in as_completed(futures):
-                idx = futures[fut]
-                results[idx] = fut.result()
+                for fut in as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        results[idx] = fut.result()
+                    except Exception as e:
+                        # Handle individual generation failures gracefully
+                        _debug(f"{task_id}[sample={idx}] failed with error: {e}")
+                        results[idx] = (
+                            {"task_id": task_id, "completion": "    pass\n"},
+                            {
+                                "task_id": task_id,
+                                "resolved": False,
+                                "attempts": [{"error": str(e)}],
+                            }
+                        )
+                    finally:
+                        # Clean up future reference
+                        del futures[fut]
+            except Exception:
+                # Cancel remaining futures if something goes wrong
+                for future in futures:
+                    future.cancel()
+                raise
 
         for j in range(N_SAMPLES):
             sample_record, empty_record = results[j]

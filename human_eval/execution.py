@@ -76,9 +76,20 @@ def check_correctness(
 
     p = multiprocessing.Process(target=unsafe_execute, args=(problem, completion, timeout, result))
     p.start()
-    p.join(timeout=timeout + 1)
-    if p.is_alive():
-        p.kill()
+    try:
+        p.join(timeout=timeout + 1)
+        if p.is_alive():
+            p.kill()
+            p.join()  # Wait for process to actually terminate
+    finally:
+        # Ensure process resources are cleaned up
+        if p.is_alive():
+            p.terminate()
+            p.join(timeout=1)
+            if p.is_alive():
+                p.kill()
+                p.join()
+        p.close()  # Close process handle to free resources
 
     if not result:
         result.append("timed out")
@@ -96,12 +107,14 @@ def time_limit(seconds: float):
     def signal_handler(signum, frame):
         raise TimeoutException("Timed out!")
 
+    # Set up signal handler first to avoid race condition
+    old_handler = signal.signal(signal.SIGALRM, signal_handler)
     signal.setitimer(signal.ITIMER_REAL, seconds)
-    signal.signal(signal.SIGALRM, signal_handler)
     try:
         yield
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)  # Restore original handler
 
 
 @contextlib.contextmanager

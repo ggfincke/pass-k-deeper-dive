@@ -15,7 +15,7 @@ import numpy as np
 from human_eval.data import read_problems, stream_jsonl, write_jsonl
 from human_eval.execution import check_correctness
 
-from extensions.config import EVAL_KS
+from extensions.config import EVAL_KS, MAX_EVAL_WORKERS, MAX_EXECUTION_TIMEOUT
 from extensions.evaluation.metrics import (
     bootstrap_ci,
     estimate_pass_at_k_vector,
@@ -29,29 +29,55 @@ def evaluate_functional_correctness_subset(
     sample_file: str,
     k: Optional[Union[int, Sequence[int]]] = None,
     timeout: float = 10.0,
-    n_workers: int = 8,
+    n_workers: Optional[int] = None,
     compute_ci: bool = False,
 ) -> Dict[str, object]:
     problems = read_problems()
+    
+    # Use configured max workers if n_workers not specified
+    if n_workers is None:
+        n_workers = MAX_EVAL_WORKERS
+    
+    # Clamp timeout to maximum allowed
+    effective_timeout = min(timeout, MAX_EXECUTION_TIMEOUT)
 
     rows: List[SampleRow] = []
     for idx, rec in enumerate(stream_jsonl(sample_file)):
         rows.append(SampleRow(idx=idx, task_id=rec["task_id"], completion=rec["completion"]))
 
     futures = {}
+    results_by_idx: Dict[int, Dict] = {}
+    
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
-        for row in rows:
-            futures[executor.submit(
-                check_correctness,
-                problem=problems[row.task_id],
-                completion=row.completion,
-                timeout=timeout,
-            )] = row
+        try:
+            for row in rows:
+                future = executor.submit(
+                    check_correctness,
+                    problem=problems[row.task_id],
+                    completion=row.completion,
+                    timeout=effective_timeout,
+                )
+                futures[future] = row
 
-        results_by_idx: Dict[int, Dict] = {}
-        for fut in as_completed(futures):
-            row = futures[fut]
-            results_by_idx[row.idx] = fut.result()
+            for fut in as_completed(futures):
+                row = futures[fut]
+                try:
+                    results_by_idx[row.idx] = fut.result()
+                except Exception as e:
+                    # Handle individual task failures gracefully
+                    results_by_idx[row.idx] = {
+                        "passed": False,
+                        "result": f"execution_error: {str(e)}",
+                        "task_id": row.task_id,
+                    }
+                finally:
+                    # Clean up future reference to prevent memory leaks
+                    del futures[fut]
+        except Exception:
+            # Cancel remaining futures if something goes wrong
+            for future in futures:
+                future.cancel()
+            raise
 
     per_task_norm_to_firstpass: Dict[str, Dict[str, bool]] = defaultdict(dict)
     per_task_unique_passes: Dict[str, List[bool]] = defaultdict(list)
