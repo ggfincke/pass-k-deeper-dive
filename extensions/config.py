@@ -67,6 +67,10 @@ _raw_eval = os.getenv("EVAL_KS", "1,5,10,25")
 EVAL_KS = [int(x.strip()) for x in _raw_eval.split(",") if x.strip()]
 # Concurrent generation workers when sampling pass@k completions
 CONCURRENCY = max(1, int(os.getenv("CONCURRENCY", "5")))
+# Maximum workers for evaluation tasks (defaults to min of CPU count or 8)
+MAX_EVAL_WORKERS = max(1, min(int(os.getenv("MAX_EVAL_WORKERS", str(min(os.cpu_count() or 4, 8)))), 32))
+# Maximum execution timeout in seconds
+MAX_EXECUTION_TIMEOUT = float(os.getenv("MAX_EXECUTION_TIMEOUT", "30.0"))
 # Maximum number of HumanEval tasks to process; None means all tasks
 LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
 # Temperature used for generation requests
@@ -111,6 +115,8 @@ __all__ = [
     "N_SAMPLES",
     "EVAL_KS",
     "CONCURRENCY",
+    "MAX_EVAL_WORKERS",
+    "MAX_EXECUTION_TIMEOUT",
     "LIMIT",
     "TEMP",
     "OLLAMA_OPTIONS",
