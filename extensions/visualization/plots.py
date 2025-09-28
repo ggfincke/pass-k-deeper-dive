@@ -1,13 +1,13 @@
-# ~/extensions/visualization/plots.py
 """Plotting helpers for evaluation metrics."""
 
 from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 import pandas as pd
 
-from extensions.visualization.settings import (
-    COVERAGE_ABOVE_OFFSET,
+from .settings import (
     COVERAGE_LABEL_OFFSET,
     HIGHLIGHT_KS,
     PASS_K_XTICKS,
@@ -64,29 +64,50 @@ def plot_pass_vs_k_with_coverage(
 
 
 # Plot naive vs unbiased pass@k curves with stacked label annotations
+def _stacked_label_positions(ax: Axes, values_desc: List[float]) -> List[float]:
+    """Return y-positions for stacked labels, respecting plot margins."""
+
+    if not values_desc:
+        return []
+
+    y_min, y_max = ax.get_ylim()
+    y_range = y_max - y_min if y_max > y_min else 1.0
+    y_pad = y_range * STACKED_LABEL_Y_PAD_FRAC
+    y_gap = y_range * STACKED_LABEL_Y_GAP_FRAC
+    top_margin = y_range * STACKED_LABEL_TOP_MARGIN_FRAC
+    bottom_margin = y_range * STACKED_LABEL_BOTTOM_MARGIN_FRAC
+
+    highest = values_desc[0]
+    lowest = values_desc[-1]
+
+    # Try to stack above the highest point first
+    top_candidate = min(highest + y_pad, y_max - top_margin)
+    positions = [top_candidate - i * y_gap for i in range(len(values_desc))]
+    if not positions or positions[-1] >= y_min + bottom_margin:
+        return positions
+
+    # Otherwise, place the stack below the lowest point
+    top_candidate = min(lowest - y_pad, y_max - top_margin)
+    min_allowed = y_min + bottom_margin + y_gap * (len(values_desc) - 1)
+    if top_candidate < min_allowed:
+        top_candidate = min_allowed
+    return [top_candidate - i * y_gap for i in range(len(values_desc))]
+
+
 def plot_pass_vs_k_naive_vs_unbiased(
     macro_df: pd.DataFrame, title: str, out_path: Path
 ) -> None:
-    plt.figure()
+    fig, ax = plt.subplots()
     xs = macro_df["k"].tolist()
     unbiased = macro_df["pass@k_macro"].tolist()
     naive = macro_df["pass@k_macro_naive"].tolist()
 
-    plt.plot(xs, unbiased, marker="o", label="pass@k (unbiased)")
-    plt.plot(xs, naive, marker="o", label="pass@k (naive)")
+    ax.plot(xs, unbiased, marker="o", label="pass@k (unbiased)")
+    ax.plot(xs, naive, marker="o", label="pass@k (naive)")
 
-    # Calculate positioning parameters for stacked annotations
-    ax = plt.gca()
-    x_limits = PASS_K_XLIM if PASS_K_XLIM is not None else ax.get_xlim()
-    y_limits = PASS_K_YLIM if PASS_K_YLIM is not None else ax.get_ylim()
-    y_range = y_limits[1] - y_limits[0]
-    pad = y_range * STACKED_LABEL_Y_PAD_FRAC
-    gap = y_range * STACKED_LABEL_Y_GAP_FRAC
-    top_margin = y_range * STACKED_LABEL_TOP_MARGIN_FRAC
-    bottom_margin = y_range * STACKED_LABEL_BOTTOM_MARGIN_FRAC
-    prefer_right = set(STACKED_LABEL_FORCE_RIGHT_KS)
+    _configure_pass_axes()
 
-    # Add stacked annotations for highlighted k values
+    # Add stacked annotations for highlighted k values with smarter positioning
     indexed = macro_df.set_index("k")
     for k in sorted(HIGHLIGHT_KS):
         if k not in indexed.index:
@@ -94,67 +115,42 @@ def plot_pass_vs_k_naive_vs_unbiased(
         row = indexed.loc[k]
         u_val = float(row["pass@k_macro"].item())
         n_val = float(row["pass@k_macro_naive"].item())
-        cov_val = float(row["coverage@k"].item())
+        labels = [
+            (f"pass@{k}={u_val:.2f}", u_val, "tab:blue"),
+            (f"naive@{k}={n_val:.2f}", n_val, "tab:orange"),
+        ]
 
-        # Calculate vertical positions for stacked labels with collision avoidance
-        base_top = max(u_val, n_val) + pad
-        pass_y = min(base_top, y_limits[1] - top_margin)
-        naive_y = pass_y - gap
-        min_allowed = y_limits[0] + bottom_margin
-        if naive_y < min_allowed:
-            naive_y = min_allowed
-            pass_y = min(naive_y + gap, y_limits[1] - top_margin)
-        if pass_y <= naive_y:
-            pass_y = min(naive_y + gap, y_limits[1] - top_margin)
-
-        # Determine horizontal alignment to avoid edge clipping
-        align_left = (
-            (x_limits[1] - k) < STACKED_LABEL_EDGE_MARGIN and k not in prefer_right
-        )
-        if align_left:
-            x_offset = -STACKED_LABEL_X_OFFSET
-            ha = "right"
-        else:
-            x_offset = STACKED_LABEL_X_OFFSET
-            ha = "left"
-
-        if align_left:
-            pass_xy = (k, pass_y)
-            naive_xy = (k, naive_y)
-        else:
-            pass_xy = (min(k + STACKED_LABEL_EDGE_MARGIN, x_limits[1]), pass_y)
-            naive_xy = (min(k + STACKED_LABEL_EDGE_MARGIN, x_limits[1]), naive_y)
-
-        plt.annotate(
-            f"pass@{k}={u_val:.2f}",
-            pass_xy,
-            xycoords="data",
-            textcoords="offset points",
-            xytext=(x_offset, 0),
-            ha=ha,
-            va="bottom",
-            color="tab:blue",
-            annotation_clip=False,
-        )
-        plt.annotate(
-            f"naive@{k}={n_val:.2f}",
-            naive_xy,
-            xycoords="data",
-            textcoords="offset points",
-            xytext=(x_offset, 0),
-            ha=ha,
-            va="top",
-            color="tab:orange",
-            annotation_clip=False,
+        labels_desc = sorted(labels, key=lambda item: item[1], reverse=True)
+        y_positions = _stacked_label_positions(
+            ax, [item[1] for item in labels_desc]
         )
 
-    plt.title(title)
-    plt.xlabel("k")
-    plt.ylabel("pass@k")
-    _configure_pass_axes()
-    plt.legend(loc="lower right")
-    plt.tight_layout()
-    plt.savefig(out_path)
+        x_min, x_max = ax.get_xlim()
+        align_right = True
+        if (x_max - k) < STACKED_LABEL_EDGE_MARGIN and k not in STACKED_LABEL_FORCE_RIGHT_KS:
+            align_right = False
+        x_offset = STACKED_LABEL_X_OFFSET if align_right else -STACKED_LABEL_X_OFFSET
+        ha = "left" if align_right else "right"
+
+        for (text, _, color), y_pos in zip(labels_desc, y_positions):
+            ax.annotate(
+                text,
+                xy=(k, y_pos),
+                xycoords="data",
+                textcoords="offset points",
+                xytext=(x_offset, 0),
+                ha=ha,
+                va="center",
+                color=color,
+                annotation_clip=False,
+            )
+
+    ax.set_title(title)
+    ax.set_xlabel("k")
+    ax.set_ylabel("pass@k")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_path)
     print(f"Saved: {out_path}")
 
 

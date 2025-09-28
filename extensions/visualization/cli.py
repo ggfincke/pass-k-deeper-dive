@@ -28,8 +28,8 @@ from extensions.visualization.metrics import compute_macro, compute_per_task
 from extensions.visualization.plots import (
     compare_two_runs,
     plot_duplicates_hist,
-    plot_pass_vs_k_with_coverage,
     plot_pass_vs_k_naive_vs_unbiased,
+    plot_pass_vs_k_with_coverage,
 )
 
 
@@ -105,17 +105,23 @@ def main() -> None:
     # Generate visualization plots
     descriptor = f"{MODEL}, temp={TEMP:g}"
 
-    pass_fig = args.outdir / "pass_vs_k_with_coverage.png"
-    dual_pass_fig = args.outdir / "pass_vs_k_naive_vs_unbiased.png"
-    dups_fig = args.outdir / "duplicates_hist.png"
+    pass_plot = plot_pass_vs_k_with_coverage
+    dual_pass_plot = plot_pass_vs_k_naive_vs_unbiased
+    dups_plot = plot_duplicates_hist
+    compare_plot = compare_two_runs
+    extension = ".png"
+
+    pass_fig = args.outdir / f"pass_vs_k_with_coverage{extension}"
+    dual_pass_fig = args.outdir / f"pass_vs_k_naive_vs_unbiased{extension}"
+    dups_fig = args.outdir / f"duplicates_hist{extension}"
     if max_k >= 1 and not macro_df.empty:
-        plot_pass_vs_k_with_coverage(
+        pass_plot(
             macro_df, f"pass@k with coverage — {descriptor}", pass_fig
         )
-        plot_pass_vs_k_naive_vs_unbiased(
+        dual_pass_plot(
             macro_df, f"pass@k naive vs unbiased — {descriptor}", dual_pass_fig
         )
-    plot_duplicates_hist(per_task_df, "Duplicates collapsed per task", dups_fig)
+    dups_plot(per_task_df, "Duplicates collapsed per task", dups_fig)
 
     # Generate comparison plot if second results file provided
     if args.compare is not None:
@@ -123,8 +129,8 @@ def main() -> None:
         compare_path = resolve_in_results_dir(args.compare)
         if not compare_path.exists():
             raise FileNotFoundError(f"Comparison file not found: {compare_path}")
-        cmp_fig = args.outdir / "pass_vs_k_comparison.png"
-        compare_two_runs(results_path, compare_path, labels[0], labels[1], cmp_fig)
+        cmp_fig = args.outdir / f"pass_vs_k_comparison{extension}"
+        compare_plot(results_path, compare_path, labels[0], labels[1], cmp_fig)
 
 
 if __name__ == "__main__":
