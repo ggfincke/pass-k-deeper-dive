@@ -4,3 +4,4 @@ human_eval.egg-info/
 .vscode/
 figures/
 comment-style.md
+.DS_Store
