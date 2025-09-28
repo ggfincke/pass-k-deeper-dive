@@ -5,3 +5,4 @@ human_eval.egg-info/
 figures/
 comment-style.md
 .DS_Store
+.env
