@@ -242,6 +242,94 @@ def plot_pass_vs_k_unbiased_comparison(
     print(f"Saved: {out_path}")
 
 
+# Plot coverage@k for two runs with stacked annotations
+def plot_coverage_vs_k_comparison(
+    macro_a: pd.DataFrame,
+    macro_b: pd.DataFrame,
+    label_a: str,
+    label_b: str,
+    title: str,
+    out_path: Path,
+) -> None:
+    fig, ax = plt.subplots()
+
+    data_a = macro_a[["k", "coverage@k"]].dropna()
+    data_b = macro_b[["k", "coverage@k"]].dropna()
+
+    if data_a.empty and data_b.empty:
+        raise ValueError("No coverage@k data available to plot")
+
+    line_a = None
+    line_b = None
+    if not data_a.empty:
+        line_a = ax.plot(
+            data_a["k"].tolist(),
+            data_a["coverage@k"].tolist(),
+            marker="o",
+            label=label_a,
+        )[0]
+    if not data_b.empty:
+        line_b = ax.plot(
+            data_b["k"].tolist(),
+            data_b["coverage@k"].tolist(),
+            marker="o",
+            label=label_b,
+        )[0]
+
+    if PASS_K_XLIM is not None:
+        ax.set_xlim(PASS_K_XLIM)
+    if PASS_K_XTICKS is not None:
+        ax.set_xticks(PASS_K_XTICKS)
+    ax.set_ylim(0.0, 1.05)
+
+    color_a = line_a.get_color() if line_a is not None else "tab:blue"
+    color_b = line_b.get_color() if line_b is not None else "tab:orange"
+
+    indexed_a = data_a.set_index("k") if not data_a.empty else pd.DataFrame()
+    indexed_b = data_b.set_index("k") if not data_b.empty else pd.DataFrame()
+    if not indexed_a.empty:
+        indexed_a.index = indexed_a.index.astype(int)
+    if not indexed_b.empty:
+        indexed_b.index = indexed_b.index.astype(int)
+
+    y_offset_by_k = {1: -30, 5: -30, 10: -40, 25: -10}
+
+    for k in sorted(HIGHLIGHT_KS):
+        annotations = []
+        if not indexed_a.empty and k in indexed_a.index:
+            cov_a = indexed_a.at[k, "coverage@k"]
+            if not pd.isna(cov_a):
+                annotations.append((f"coverage@{k}={float(cov_a):.2f}", float(cov_a), color_a))
+        if not indexed_b.empty and k in indexed_b.index:
+            cov_b = indexed_b.at[k, "coverage@k"]
+            if not pd.isna(cov_b):
+                annotations.append((f"coverage@{k}={float(cov_b):.2f}", float(cov_b), color_b))
+        if not annotations:
+            continue
+
+        y_offset = y_offset_by_k.get(k, 0)
+        for text, value, color in annotations:
+            ax.annotate(
+                text,
+                xy=(k, value),
+                xycoords="data",
+                textcoords="offset points",
+                xytext=(0, y_offset),
+                ha="center",
+                va="top",
+                color=color,
+                annotation_clip=False,
+            )
+
+    ax.set_title(title)
+    ax.set_xlabel("k")
+    ax.set_ylabel("coverage@k")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.savefig(out_path)
+    print(f"Saved: {out_path}")
+
+
 # Plot a histogram of duplicates collapsed per task
 def plot_duplicates_hist(
     per_task_df: pd.DataFrame, title: str, out_path: Path
@@ -299,6 +387,7 @@ __all__ = [
     "plot_pass_vs_k_with_coverage",
     "plot_pass_vs_k_naive_vs_unbiased",
     "plot_pass_vs_k_unbiased_comparison",
+    "plot_coverage_vs_k_comparison",
     "plot_duplicates_hist",
     "compare_two_runs",
 ]
