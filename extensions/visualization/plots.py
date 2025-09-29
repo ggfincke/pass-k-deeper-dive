@@ -154,6 +154,94 @@ def plot_pass_vs_k_naive_vs_unbiased(
     print(f"Saved: {out_path}")
 
 
+# Plot unbiased pass@k for two runs with stacked annotations
+def plot_pass_vs_k_unbiased_comparison(
+    macro_a: pd.DataFrame,
+    macro_b: pd.DataFrame,
+    label_a: str,
+    label_b: str,
+    title: str,
+    out_path: Path,
+) -> None:
+    fig, ax = plt.subplots()
+
+    data_a = macro_a[["k", "pass@k_macro"]].dropna()
+    data_b = macro_b[["k", "pass@k_macro"]].dropna()
+
+    if data_a.empty and data_b.empty:
+        raise ValueError("No unbiased pass@k data available to plot")
+
+    if not data_a.empty:
+        ax.plot(
+            data_a["k"].tolist(),
+            data_a["pass@k_macro"].tolist(),
+            marker="o",
+            label=label_a,
+        )
+    if not data_b.empty:
+        ax.plot(
+            data_b["k"].tolist(),
+            data_b["pass@k_macro"].tolist(),
+            marker="o",
+            label=label_b,
+        )
+
+    _configure_pass_axes()
+
+    indexed_a = data_a.set_index("k") if not data_a.empty else pd.DataFrame()
+    indexed_b = data_b.set_index("k") if not data_b.empty else pd.DataFrame()
+    if not indexed_a.empty:
+        indexed_a.index = indexed_a.index.astype(int)
+    if not indexed_b.empty:
+        indexed_b.index = indexed_b.index.astype(int)
+
+    for k in sorted(HIGHLIGHT_KS):
+        labels = []
+        if not indexed_a.empty and k in indexed_a.index:
+            val_a = indexed_a.at[k, "pass@k_macro"]
+            if not pd.isna(val_a):
+                labels.append((f"pass@{k}={float(val_a):.2f}", float(val_a), "tab:blue"))
+        if not indexed_b.empty and k in indexed_b.index:
+            val_b = indexed_b.at[k, "pass@k_macro"]
+            if not pd.isna(val_b):
+                labels.append((f"pass@{k}={float(val_b):.2f}", float(val_b), "tab:orange"))
+        if not labels:
+            continue
+
+        labels_desc = sorted(labels, key=lambda item: item[1], reverse=True)
+        y_positions = _stacked_label_positions(
+            ax, [item[1] for item in labels_desc]
+        )
+
+        x_min, x_max = ax.get_xlim()
+        align_right = True
+        if (x_max - k) < STACKED_LABEL_EDGE_MARGIN and k not in STACKED_LABEL_FORCE_RIGHT_KS:
+            align_right = False
+        x_offset = STACKED_LABEL_X_OFFSET if align_right else -STACKED_LABEL_X_OFFSET
+        ha = "left" if align_right else "right"
+
+        for (text, _, color), y_pos in zip(labels_desc, y_positions):
+            ax.annotate(
+                text,
+                xy=(k, y_pos),
+                xycoords="data",
+                textcoords="offset points",
+                xytext=(x_offset, 0),
+                ha=ha,
+                va="center",
+                color=color,
+                annotation_clip=False,
+            )
+
+    ax.set_title(title)
+    ax.set_xlabel("k")
+    ax.set_ylabel("pass@k (macro)")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_path)
+    print(f"Saved: {out_path}")
+
+
 # Plot a histogram of duplicates collapsed per task
 def plot_duplicates_hist(
     per_task_df: pd.DataFrame, title: str, out_path: Path
@@ -210,6 +298,7 @@ def compare_two_runs(
 __all__ = [
     "plot_pass_vs_k_with_coverage",
     "plot_pass_vs_k_naive_vs_unbiased",
+    "plot_pass_vs_k_unbiased_comparison",
     "plot_duplicates_hist",
     "compare_two_runs",
 ]

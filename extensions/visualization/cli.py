@@ -29,6 +29,7 @@ from extensions.visualization.plots import (
     compare_two_runs,
     plot_duplicates_hist,
     plot_pass_vs_k_naive_vs_unbiased,
+    plot_pass_vs_k_unbiased_comparison,
     plot_pass_vs_k_with_coverage,
 )
 
@@ -82,8 +83,36 @@ def main() -> None:
     rows = read_results_jsonl(results_path)
     per_task_df = compute_per_task(rows)
     inferred_max_k = int(per_task_df["n_unique"].max()) if not per_task_df.empty else 0
-    max_k = args.max_k if args.max_k is not None else inferred_max_k
+
+    compare_path = None
+    compare_labels = None
+    compare_per_task_df = None
+    compare_macro_df = None
+    compare_inferred_max_k = 0
+
+    if args.compare is not None:
+        compare_path = resolve_in_results_dir(args.compare)
+        if not compare_path.exists():
+            raise FileNotFoundError(f"Comparison file not found: {compare_path}")
+        compare_rows = read_results_jsonl(compare_path)
+        compare_per_task_df = compute_per_task(compare_rows)
+        compare_inferred_max_k = (
+            int(compare_per_task_df["n_unique"].max())
+            if not compare_per_task_df.empty
+            else 0
+        )
+        compare_labels = args.labels if args.labels else ["run A", "run B"]
+
+    max_k = (
+        args.max_k
+        if args.max_k is not None
+        else max(inferred_max_k, compare_inferred_max_k)
+    )
     macro_df = compute_macro(per_task_df, max_k=max_k if max_k >= 1 else None)
+    if compare_per_task_df is not None:
+        compare_macro_df = compute_macro(
+            compare_per_task_df, max_k=max_k if max_k >= 1 else None
+        )
 
     # Export computed metrics to CSV files
     per_task_csv = args.outdir / "per_task_metrics.csv"
@@ -124,13 +153,29 @@ def main() -> None:
     dups_plot(per_task_df, "Duplicates collapsed per task", dups_fig)
 
     # Generate comparison plot if second results file provided
-    if args.compare is not None:
-        labels = args.labels if args.labels else ["run A", "run B"]
-        compare_path = resolve_in_results_dir(args.compare)
-        if not compare_path.exists():
-            raise FileNotFoundError(f"Comparison file not found: {compare_path}")
+    if compare_path is not None and compare_labels is not None:
         cmp_fig = args.outdir / f"pass_vs_k_comparison{extension}"
-        compare_plot(results_path, compare_path, labels[0], labels[1], cmp_fig)
+        compare_plot(
+            results_path, compare_path, compare_labels[0], compare_labels[1], cmp_fig
+        )
+
+        if (
+            max_k >= 1
+            and not macro_df.empty
+            and compare_macro_df is not None
+            and not compare_macro_df.empty
+        ):
+            unbiased_cmp_fig = (
+                args.outdir / f"pass_vs_k_unbiased_comparison{extension}"
+            )
+            plot_pass_vs_k_unbiased_comparison(
+                macro_df,
+                compare_macro_df,
+                compare_labels[0],
+                compare_labels[1],
+                f"{MODEL} pass@k (unbiased) — {compare_labels[0]} vs {compare_labels[1]}",
+                unbiased_cmp_fig,
+            )
 
 
 if __name__ == "__main__":
