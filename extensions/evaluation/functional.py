@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Sequence, Union
 import numpy as np
 
 from human_eval.data import read_problems, stream_jsonl, write_jsonl
-from human_eval.execution import check_correctness
+from human_eval.execution import SANDBOX_PROCESS_LIMIT, check_correctness
 
 from extensions.config import EVAL_KS, MAX_EVAL_WORKERS, MAX_EXECUTION_TIMEOUT
 from extensions.evaluation.metrics import (
@@ -37,6 +37,8 @@ def evaluate_functional_correctness_subset(
     # Use configured max workers if n_workers not specified
     if n_workers is None:
         n_workers = MAX_EVAL_WORKERS
+
+    n_workers = max(1, min(n_workers, MAX_EVAL_WORKERS, SANDBOX_PROCESS_LIMIT))
     
     # Clamp timeout to maximum allowed
     effective_timeout = min(timeout, MAX_EXECUTION_TIMEOUT)

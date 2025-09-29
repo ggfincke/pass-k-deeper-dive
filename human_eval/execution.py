@@ -6,10 +6,11 @@ import os
 import platform
 import signal
 import tempfile
+import threading
 from typing import Dict, Optional
 
 
-def unsafe_execute(problem: Dict, completion: str, timeout: float, result):
+def unsafe_execute(problem: Dict, completion: str, timeout: float, result_conn):
     with create_tempdir():
 
         # These system calls are needed when cleaning up tempdir.
@@ -48,16 +49,45 @@ def unsafe_execute(problem: Dict, completion: str, timeout: float, result):
                     # Once you have read this disclaimer and taken appropriate precautions,
                     # uncomment the following line and proceed at your own risk:
                     exec(check_program, exec_globals)
-            result.append("passed")
+            _send_result(result_conn, "passed")
         except TimeoutException:
-            result.append("timed out")
+            _send_result(result_conn, "timed out")
         except BaseException as e:
-            result.append(f"failed: {e}")
+            _send_result(result_conn, f"failed: {e}")
+        finally:
+            try:
+                result_conn.close()
+            except (BrokenPipeError, OSError):
+                pass
 
         # Needed for cleaning up.
         shutil.rmtree = rmtree
         os.rmdir = rmdir
         os.chdir = chdir
+
+
+def _send_result(result_conn, value: str) -> None:
+    try:
+        result_conn.send(value)
+    except (BrokenPipeError, EOFError, OSError):
+        pass
+
+
+_sandbox_limit_env = os.getenv("HUMAN_EVAL_MAX_PROCESSES")
+try:
+    _sandbox_limit = int(_sandbox_limit_env) if _sandbox_limit_env is not None else None
+except ValueError:
+    raise ValueError(
+        f"HUMAN_EVAL_MAX_PROCESSES must be an integer, got {_sandbox_limit_env!r}"
+    )
+
+if _sandbox_limit is None or _sandbox_limit <= 0:
+    detected_cpus = multiprocessing.cpu_count() or 1
+    SANDBOX_PROCESS_LIMIT = max(1, min(detected_cpus, 32))
+else:
+    SANDBOX_PROCESS_LIMIT = max(1, _sandbox_limit)
+
+_SANDBOX_SEMAPHORE = threading.BoundedSemaphore(SANDBOX_PROCESS_LIMIT)
 
 
 def check_correctness(
@@ -70,34 +100,51 @@ def check_correctness(
     :param completion_id: an optional completion ID so we can match
         the results later even if execution finishes asynchronously.
     """
-
-    manager = multiprocessing.Manager()
-    result = manager.list()
-
-    p = multiprocessing.Process(target=unsafe_execute, args=(problem, completion, timeout, result))
-    p.start()
+    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+    child_conn_open = True
+    _SANDBOX_SEMAPHORE.acquire()
+    proc: Optional[multiprocessing.Process] = None
+    result_value: Optional[str] = None
     try:
-        p.join(timeout=timeout + 1)
-        if p.is_alive():
-            p.kill()
-            p.join()  # Wait for process to actually terminate
+        proc = multiprocessing.Process(
+            target=unsafe_execute,
+            args=(problem, completion, timeout, child_conn),
+        )
+        proc.start()
+        child_conn.close()
+        child_conn_open = False
+        proc.join(timeout=timeout + 1)
+        if proc.is_alive():
+            proc.kill()
+            proc.join()
     finally:
-        # Ensure process resources are cleaned up
-        if p.is_alive():
-            p.terminate()
-            p.join(timeout=1)
-            if p.is_alive():
-                p.kill()
-                p.join()
-        p.close()  # Close process handle to free resources
+        try:
+            if proc is not None and proc.is_alive():
+                proc.terminate()
+                proc.join(timeout=1)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join()
+            if parent_conn.poll():
+                try:
+                    result_value = parent_conn.recv()
+                except (EOFError, OSError):
+                    result_value = None
+        finally:
+            parent_conn.close()
+            if child_conn_open:
+                child_conn.close()
+            if proc is not None:
+                proc.close()
+            _SANDBOX_SEMAPHORE.release()
 
-    if not result:
-        result.append("timed out")
+    if result_value is None:
+        result_value = "timed out"
 
     return dict(
         task_id=problem["task_id"],
-        passed=result[0] == "passed",
-        result=result[0],
+        passed=result_value == "passed",
+        result=result_value,
         completion_id=completion_id,
     )
 
