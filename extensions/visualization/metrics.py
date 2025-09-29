@@ -68,12 +68,26 @@ def compute_per_task(rows: List[Dict]) -> pd.DataFrame:
             "dedup_rate": dedup_rate,
         }
 
-        # Compute pass@k for all valid k values using unbiased estimator
+        # Compute pass@k for all valid k values using unbiased estimator on unique samples
         for k in range(1, n_unique + 1):
-            record[f"pass@{k}_task"] = pass_at_k(n_unique, c_unique, k)
-        # Compute naive pass@k using raw samples without deduplication
+            pass_unique_k = pass_at_k(n_unique, c_unique, k)
+            record[f"pass@{k}_task"] = pass_unique_k
+            record[f"pass_unique@{k}_task"] = pass_unique_k
+
+        # Compute unbiased pass@k on raw samples (without deduplication)
         for k in range(1, n_raw + 1):
-            record[f"naive_pass@{k}_task"] = pass_at_k(n_raw, c_raw, k)
+            pass_raw_k = pass_at_k(n_raw, c_raw, k)
+            record[f"pass_raw@{k}_task"] = pass_raw_k
+
+        # Compute order-dependent naive pass@k using the first k raw samples
+        any_so_far = False
+        cumulative_any: List[float] = []
+        for _, passed in items:
+            any_so_far = any_so_far or bool(passed)
+            cumulative_any.append(1.0 if any_so_far else 0.0)
+
+        for k in range(1, n_raw + 1):
+            record[f"naive_pass@{k}_task"] = cumulative_any[k - 1]
         records.append(record)
 
     return pd.DataFrame.from_records(records)
@@ -99,17 +113,17 @@ def compute_macro(df: pd.DataFrame, max_k: Optional[int] = None) -> pd.DataFrame
             n_unique = int(row["n_unique"])
             n_raw = int(row["n_raw"])
 
-            if n_unique <= 0:
+            if n_raw <= 0:
                 per_task_unbiased.append(0.0)
             else:
-                capped_unique_k = min(k, n_unique)
-                col_unique = f"pass@{capped_unique_k}_task"
-                if col_unique in row.index:
-                    value_unique = row[col_unique]
-                    value_unique = 0.0 if pd.isna(value_unique) else float(value_unique)
+                capped_raw_k = min(k, n_raw)
+                col_unbiased = f"pass_raw@{capped_raw_k}_task"
+                if col_unbiased in row.index:
+                    value_raw = row[col_unbiased]
+                    value_raw = 0.0 if pd.isna(value_raw) else float(value_raw)
                 else:
-                    value_unique = 0.0
-                per_task_unbiased.append(float(value_unique))
+                    value_raw = 0.0
+                per_task_unbiased.append(float(value_raw))
 
             if n_raw <= 0:
                 per_task_naive.append(0.0)
