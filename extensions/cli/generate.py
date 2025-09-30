@@ -20,6 +20,7 @@ from typing import Optional, Sequence
 from extensions.generation.runner import generate_humaneval_completions
 
 
+# Build argument parser for generation CLI
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate HumanEval completions using the configured Ollama backend.",

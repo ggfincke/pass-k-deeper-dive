@@ -17,9 +17,8 @@ _MODULE_PATH = Path(__file__).resolve()
 REPO_ROOT = _MODULE_PATH.parents[1]
 
 
+# Populate os.environ with values from nearest .env files
 def _load_env_file() -> None:
-    """Populate os.environ with values from nearest .env files."""
-
     env_candidates = []
     for parent in _MODULE_PATH.parents:
         env_path = parent / ".env"
@@ -41,9 +40,8 @@ def _load_env_file() -> None:
             load_dotenv(env_path, override=False)
 
 
+# Minimal .env loader used when python-dotenv is unavailable
 def _fallback_load_env(env_path: Path) -> None:
-    """Minimal .env loader used when python-dotenv is unavailable."""
-
     with env_path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()

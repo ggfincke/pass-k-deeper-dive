@@ -43,19 +43,28 @@ ollama pull gpt-oss:20b  # needs ~13 GB disk
 [`extensions/cli/generate.py`](extensions/cli/generate.py) reads HumanEval prompts, samples completions, retries empty responses, writes artifacts, and then calls the evaluator.
 
 ```bash
-python -m extensions.cli.generate
+python -m extensions.cli.generate          # Standard run
+python -m extensions.cli.generate -v       # Verbose mode with debug output
 ```
 
 Key defaults (from [`extensions/config.py`](extensions/config.py)):
 
-- `MODEL="gpt-oss:20b"`
-- `N_SAMPLES=100` completions per task (set `PROBLEM_LIMIT` to cap tasks; `LIMIT` still works)
-- `EVAL_KS=[1,5,10,25]`
-- `CONCURRENCY=5` parallel sampling workers
-- `MAX_RETRIES=2` retries for empty completions before falling back to `pass`
-- `TEMP=0.2` (override via `PASSK_TEMP` or `PASSK_TEMPERATURE`)
+- `MODEL="gpt-oss:20b"` — Ollama model to use
+- `N_SAMPLES=100` — Completions per task
+- `PROBLEM_LIMIT=None` — Max tasks to process (None = all 164 HumanEval tasks; legacy `LIMIT` still works)
+- `EVAL_KS=[1,5,10,25]` — k-values for pass@k/coverage@k computation
+- `CONCURRENCY=5` — Parallel sampling workers
+- `MAX_RETRIES=2` — Retry budget for empty completions before falling back to `pass`
+- `TEMP=0.2` — Sampling temperature (override via `PASSK_TEMP` or `PASSK_TEMPERATURE`)
+- `MAX_NEW_TOKENS=131072` — Token generation limit per completion
+- `OLLAMA_HTTP_TIMEOUT=120.0` — Timeout per Ollama API call (seconds)
+- `OLLAMA_HTTP_MAX_RETRIES=3` — Retry attempts for throttled (429/503) Ollama responses
+- `EMPTY_COMPLETION_MAX_RETRIES=2` — Specific retry limit for empty completions
+- `EMPTY_COMPLETION_BACKOFF_BASE=0.1` — Initial backoff between empty retries (seconds)
 
-Environment variables override any value; the full list lives in `extensions/config.py`, and `.env-example` shows sane defaults you can copy to `.env` for local overrides. Tip for Windows: the OS fills `TEMP` with a directory path, so set `PASSK_TEMP`/`PASSK_TEMPERATURE` when you actually mean sampling temperature. Numeric `TEMP` values still work when parseable as floats.
+Environment variables override any value; the full list lives in [`extensions/config.py`](extensions/config.py), and [`.env-example`](.env-example) shows sane defaults you can copy to `.env` for local overrides.
+
+**Windows tip:** The OS sets `TEMP` to a directory path, so use `PASSK_TEMP` or `PASSK_TEMPERATURE` when you actually mean sampling temperature. Numeric `TEMP` values still work when parseable as floats.
 
 ### Evaluate an existing JSONL
 
@@ -68,23 +77,29 @@ metrics = evaluate_functional_correctness_subset("results/samples.jsonl")
 print(metrics["pass@1"], metrics["coverage@1"])
 ```
 
-Outputs land at `results/samples.jsonl_results.jsonl` by default and include naive vs unbiased pass@k, coverage, per-task breakdowns, and optional bootstrap confidence intervals.
+Outputs land at `results/samples.jsonl_results.jsonl` by default and include unbiased pass@k, coverage@k, per-task breakdowns, and optional bootstrap confidence intervals.
 
 ### Visualize pass@k trends
 
-The visualization CLI aggregates evaluation output and produces ready-to-drop-in figures.
+The visualization CLI aggregates evaluation output and produces CSV metrics and comparison plots.
 
 ```bash
+# Generate figures from default results file
 python -m extensions.visualization.cli --outdir ./figures
-python -m extensions.visualization.cli results/custom_run_results.jsonl --compare baseline.jsonl --labels "temp=0.2" "temp=0.8"
+
+# Compare multiple runs with custom labels
+python -m extensions.visualization.cli results/custom_run_results.jsonl \
+  --compare baseline_results.jsonl \
+  --labels "temp=0.2" "temp=0.8" \
+  --outdir ./figures
 ```
 
 Artifacts:
 
-- `figures/per_task_metrics.csv` and `figures/macro_metrics.csv`
-- `figures/pass_vs_k_with_coverage.png`, `figures/pass_vs_k_naive_vs_unbiased.png`
-- `figures/duplicates_hist.png`
-- Optional comparison plots when `--compare` is supplied
+- `per_task_metrics.csv` — Detailed metrics for each HumanEval task
+- `macro_metrics.csv` — Aggregated pass@k and coverage@k across all tasks
+- `plot_pass_vs_k_unbiased_comparison.png` — Pass@k curves (with comparison when `--compare` is used)
+- `plot_coverage_vs_k_comparison.png` — Coverage@k curves (with comparison when `--compare` is used)
 
 ### Download and export HumanEval
 
@@ -96,10 +111,20 @@ Produces `HumanEval.jsonl.gz`, `HumanEval.jsonl`, `humaneval.json`, and `humanev
 
 ## Generated artifacts
 
-- `results/samples.jsonl` — deduplicated completions (empty ones are replaced with `pass` and logged)
-- `results/empty_samples.jsonl` — detail on retries that never produced output
-- `results/samples.jsonl_results.jsonl` — evaluation verdicts, including raw/unique pass@k fields and execution traces
-- Terminal summary — unbiased pass@k, coverage@k, n_unique histogram, and retry diagnostics
+### From generation (`python -m extensions.cli.generate`):
+- `results/samples.jsonl` — Deduplicated completions (empty ones are replaced with `pass` and logged)
+- `results/empty_samples.jsonl` — Debug info on retries that never produced output
+- `results/samples.jsonl_results.jsonl` — Evaluation verdicts with pass@k/coverage@k metrics and execution traces
+- Terminal summary — Unbiased pass@k, coverage@k, unique sample counts, and retry diagnostics
+
+### From visualization (`python -m extensions.visualization.cli`):
+- `per_task_metrics.csv` — Per-task pass@k and coverage@k breakdown
+- `macro_metrics.csv` — Aggregated metrics across all tasks
+- `plot_pass_vs_k_unbiased_comparison.png` — Pass@k curve plot
+- `plot_coverage_vs_k_comparison.png` — Coverage@k curve plot
+
+### Pre-generated results:
+- `article_results/` — Evaluation results from experiments used in the accompanying article
 
 ## Project layout
 

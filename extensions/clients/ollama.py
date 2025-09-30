@@ -31,7 +31,7 @@ from extensions.config import (
 )
 
 
-# Remove ``None`` values so the payload stays compact
+# Remove None values to keep the payload compact
 def _clean_options(options: Dict[str, object]) -> Dict[str, object]:
     return {k: v for k, v in options.items() if v is not None}
 
