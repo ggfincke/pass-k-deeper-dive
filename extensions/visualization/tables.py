@@ -7,21 +7,26 @@ across different models and temperature settings.
 """
 
 # imports
+from argparse import ArgumentParser
 from pathlib import Path
-from typing import List, Tuple
+from itertools import combinations
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from extensions.visualization.io import read_results_jsonl
+from extensions.visualization.io import read_results_jsonl, resolve_in_results_dir
 from extensions.visualization.metrics import compute_macro, compute_per_task
+from extensions.visualization.settings import HIGHLIGHT_KS, TABLE_PRECISION
 
-# K values to include in comparison tables
-HIGHLIGHT_KS = (1, 5, 10, 25)
-# Decimal precision for metric values in tables
-TABLE_PRECISION = 4
 # Default output directory for generated table images
 DEFAULT_TABLE_DIR = Path("figures/article_figures")
+
+
+# Convert labels into filename-friendly slugs
+def _slugify(label: str) -> str:
+    cleaned = label.strip().lower().replace("/", "-")
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in cleaned)
 
 
 # Extract metric values for specified k values from macro dataframe
@@ -107,63 +112,100 @@ def generate_coverage_at_k_table(
     create_table_viz(data, title, output_path)
 
 
+def _load_macro(path: Path, max_k: Optional[int]) -> pd.DataFrame:
+    rows = read_results_jsonl(path)
+    per_task = compute_per_task(rows)
+    return compute_macro(per_task, max_k=max_k)
+
+
+def _build_parser() -> ArgumentParser:
+    parser = ArgumentParser(description="Generate pass@k and coverage@k comparison tables.")
+    parser.add_argument(
+        "--run",
+        metavar=("LABEL", "PATH"),
+        nargs=2,
+        action="append",
+        required=True,
+        help="Label and JSONL results file produced by functional evaluation (may repeat).",
+    )
+    parser.add_argument(
+        "--pair",
+        metavar=("LABEL_A", "LABEL_B"),
+        nargs=2,
+        action="append",
+        help="Specific label pairs to compare; defaults to all pairwise combinations.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_TABLE_DIR,
+        help=f"Directory for generated tables (default: {DEFAULT_TABLE_DIR}).",
+    )
+    parser.add_argument(
+        "--max-k",
+        type=int,
+        default=None,
+        help="Optional maximum k to evaluate; defaults to per-run maximum unique completions.",
+    )
+    parser.add_argument(
+        "--prefix",
+        default="table",
+        help="Filename prefix for generated tables (default: 'table').",
+    )
+    return parser
+
+
 # Build and export table images for all metric comparisons
 def main() -> None:
-    # Load evaluation results from three experimental runs
-    results_02 = read_results_jsonl(Path("results/0.2results.jsonl"))
-    results_08 = read_results_jsonl(Path("results/0.8results.jsonl"))
-    results_gemma = read_results_jsonl(Path("results/gemma3results.jsonl"))
+    parser = _build_parser()
+    args = parser.parse_args()
 
-    # Compute per-task and macro-averaged metrics
-    df_02 = compute_per_task(results_02)
-    df_08 = compute_per_task(results_08)
-    df_gemma = compute_per_task(results_gemma)
+    run_paths: Dict[str, Path] = {}
+    for label, raw_path in args.run:
+        if label in run_paths:
+            parser.error(f"Duplicate run label provided: {label!r}")
+        resolved = resolve_in_results_dir(Path(raw_path)).resolve()
+        if not resolved.exists():
+            parser.error(f"Results file not found: {raw_path}")
+        run_paths[label] = resolved
 
-    macro_02 = compute_macro(df_02, max_k=25)
-    macro_08 = compute_macro(df_08, max_k=25)
-    macro_gemma = compute_macro(df_gemma, max_k=25)
+    if len(run_paths) < 2:
+        parser.error("Provide at least two --run entries to compute comparisons.")
 
-    # Ensure output directory exists
-    output_dir = DEFAULT_TABLE_DIR
+    if args.pair:
+        pairs = []
+        for label_a, label_b in args.pair:
+            if label_a not in run_paths:
+                parser.error(f"Unknown label referenced in --pair: {label_a!r}")
+            if label_b not in run_paths:
+                parser.error(f"Unknown label referenced in --pair: {label_b!r}")
+            pairs.append((label_a, label_b))
+    else:
+        pairs = list(combinations(run_paths.keys(), 2))
+
+    macros: Dict[str, pd.DataFrame] = {}
+    for label, path in run_paths.items():
+        macros[label] = _load_macro(path, args.max_k)
+
+    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate pass@k comparison tables
-    generate_pass_at_k_table(
-        macro_08,
-        macro_gemma,
-        "gpt-oss:20b",
-        "gemma3:latest",
-        "pass@k (unbiased) — gpt-oss:20b vs gemma3:latest",
-        output_dir / "table_pass_at_k_model_comparison.png",
-    )
+    prefix = args.prefix.rstrip("_") or "table"
+    for label_a, label_b in pairs:
+        macro_a = macros[label_a]
+        macro_b = macros[label_b]
+        slug_a = _slugify(label_a)
+        slug_b = _slugify(label_b)
 
-    generate_pass_at_k_table(
-        macro_02,
-        macro_08,
-        "0.2",
-        "0.8",
-        "gpt-oss:20b pass@k (unbiased) — temp=0.2 vs temp=0.8",
-        output_dir / "table_pass_at_k_temp_comparison.png",
-    )
+        pass_title = f"pass@k (unbiased) — {label_a} vs {label_b}"
+        pass_path = output_dir / f"{prefix}_pass_at_k_{slug_a}_vs_{slug_b}.png"
+        generate_pass_at_k_table(macro_a, macro_b, label_a, label_b, pass_title, pass_path)
 
-    # Generate coverage@k comparison tables
-    generate_coverage_at_k_table(
-        macro_08,
-        macro_gemma,
-        "gpt-oss:20b",
-        "gemma3:latest",
-        "coverage@k — gpt-oss:20b vs gemma3:latest",
-        output_dir / "table_coverage_at_k_model_comparison.png",
-    )
-
-    generate_coverage_at_k_table(
-        macro_02,
-        macro_08,
-        "0.2",
-        "0.8",
-        "gpt-oss:20b coverage@k — temp=0.2 vs temp=0.8",
-        output_dir / "table_coverage_at_k_temp_comparison.png",
-    )
+        coverage_title = f"coverage@k — {label_a} vs {label_b}"
+        coverage_path = output_dir / f"{prefix}_coverage_at_k_{slug_a}_vs_{slug_b}.png"
+        generate_coverage_at_k_table(
+            macro_a, macro_b, label_a, label_b, coverage_title, coverage_path
+        )
 
 
 if __name__ == "__main__":
