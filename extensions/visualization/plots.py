@@ -1,3 +1,4 @@
+# ~/extensions/visualization/plots.py
 """Plotting helpers for evaluation metrics."""
 
 from pathlib import Path
@@ -63,10 +64,8 @@ def plot_pass_vs_k_with_coverage(
     print(f"Saved: {out_path}")
 
 
-# Plot naive vs unbiased pass@k curves with stacked label annotations
+# Compute y-positions for stacked labels respecting plot margins
 def _stacked_label_positions(ax: Axes, values_desc: List[float]) -> List[float]:
-    """Return y-positions for stacked labels, respecting plot margins."""
-
     if not values_desc:
         return []
 

@@ -35,7 +35,7 @@ from extensions.generation.records import (
 )
 
 
-# Render ``path`` relative to ``base`` when possible
+# Format path as relative to base directory for display
 def _format_relative(path: Path, base: Path) -> str:
     try:
         return str(path.relative_to(base))
@@ -66,6 +66,7 @@ def generate_humaneval_completions(
     samples: List[SampleRecord] = []
     empty_samples: List[EmptySampleRecord] = []
 
+    # Print debug message when verbose mode is enabled
     def _debug(message: str) -> None:
         if verbose:
             print(f"[debug] {message}", flush=True)
@@ -102,6 +103,7 @@ def generate_humaneval_completions(
 
             _debug(f"{task_id}: scheduling {N_SAMPLES} sample(s) with base index {ti}")
 
+            # Generate a single completion with retry logic for empty results
             def _sample_once(sample_idx: int) -> Tuple[SampleRecord, Optional[EmptySampleRecord]]:
                 base_seed = 1337 + 1000 * ti + sample_idx
                 completion = ""

@@ -41,6 +41,7 @@ _THREAD_LOCAL = threading.local()
 _REQUEST_GUARD = threading.BoundedSemaphore(OLLAMA_MAX_PARALLEL_REQUESTS)
 
 
+# Retrieve thread-local requests session for connection pooling
 def _session() -> requests.Session:
     sess = getattr(_THREAD_LOCAL, "session", None)
     if sess is None:
@@ -49,6 +50,7 @@ def _session() -> requests.Session:
     return sess
 
 
+# Send a generation request to Ollama with retry logic
 def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, object]:
     options = dict(OLLAMA_OPTIONS)
     options.update(

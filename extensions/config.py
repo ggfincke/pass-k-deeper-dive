@@ -10,7 +10,7 @@ import os
 from typing import Dict, Optional
 
 
-# Interpret LIMIT semantics from environment values
+# Interpret LIMIT environment value; zero or "all" means no limit
 def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     if raw is None:
         return default
@@ -21,6 +21,7 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
     return None if value <= 0 else value
 
 
+# Check if environment value looks like a directory path
 def _looks_like_os_tempdir(value: str) -> bool:
     normalized = value.strip()
     if not normalized:
@@ -32,6 +33,7 @@ def _looks_like_os_tempdir(value: str) -> bool:
     return False
 
 
+# Resolve temperature from environment; fallback on TEMP directory values
 def _resolve_temperature(default: float) -> float:
     candidates = (
         ("PASSK_TEMPERATURE", os.getenv("PASSK_TEMPERATURE")),

@@ -1,3 +1,4 @@
+# ~/extensions/visualization/settings.py
 """Shared configuration for visualization plots."""
 
 # Pass@k highlighting and axis configuration

@@ -109,6 +109,7 @@ def evaluate_functional_correctness_subset(
 
     ks = sorted({kk for kk in resolved_k if kk > 0})
 
+    # Compute naive pass@k using empirical success rate without correction
     def _naive_pass_at_k_vector(n: np.ndarray, c: np.ndarray, k: int) -> np.ndarray:
         out = np.full_like(n, np.nan, dtype=float)
         mask = n > 0
@@ -164,7 +165,7 @@ def evaluate_functional_correctness_subset(
 
     metrics["n_unique_stats"] = n_unique_stats
 
-    # Yield evaluation rows with verdicts
+    # Merge sample rows with evaluation results for output
     def _combine():
         for row in rows:
             res = results_by_idx[row.idx]
