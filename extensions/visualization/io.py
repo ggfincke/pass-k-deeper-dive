@@ -10,9 +10,10 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
+from extensions.config import REPO_ROOT
+
 
 # Establish repo-relative defaults for result artifacts
-REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = REPO_ROOT / "results"
 DEFAULT_RESULTS_FILE = DEFAULT_RESULTS_DIR / "samples.jsonl_results.jsonl"
 
@@ -46,4 +47,3 @@ __all__ = [
     "DEFAULT_RESULTS_FILE",
     "DEFAULT_RESULTS_HELP",
 ]
-

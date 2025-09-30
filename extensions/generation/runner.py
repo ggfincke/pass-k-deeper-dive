@@ -25,6 +25,7 @@ from extensions.config import (
     MAX_RETRIES,
     N_SAMPLES,
     TEMP,
+    REPO_ROOT,
 )
 from extensions.evaluation.functional import evaluate_functional_correctness_subset
 from extensions.generation.records import (
@@ -49,7 +50,7 @@ def generate_humaneval_completions(
     run_evaluation: bool = True,
     verbose: bool = False,
 ) -> Dict[str, object]:
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     results_dir = Path(results_dir) if results_dir is not None else repo_root / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -290,18 +291,12 @@ def generate_humaneval_completions(
                 }
 
                 pass_entries = []
-                naive_entries = []
                 coverage_entries = []
                 for kk in eval_ks:
                     pass_key = f"pass@{kk}"
-                    naive_key = f"naive_pass@{kk}"
                     coverage_key = f"coverage@{kk}"
                     if pass_key in scalar_metrics:
                         pass_entries.append(f"{pass_key}={scalar_metrics[pass_key]:.4f}")
-                    if naive_key in scalar_metrics:
-                        naive_entries.append(
-                            f"{naive_key}={scalar_metrics[naive_key]:.4f}"
-                        )
                     if coverage_key in scalar_metrics:
                         coverage_entries.append(
                             f"{coverage_key}={scalar_metrics[coverage_key]:.4f}"
@@ -309,8 +304,6 @@ def generate_humaneval_completions(
 
                 if pass_entries:
                     print(f"pass@k (unbiased) -> {', '.join(pass_entries)}")
-                if naive_entries:
-                    print(f"pass@k (naive) -> {', '.join(naive_entries)}")
                 if coverage_entries:
                     print(f"coverage@k -> {', '.join(coverage_entries)}")
 

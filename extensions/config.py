@@ -7,7 +7,60 @@ Provides constants used by generation, evaluation, and visualization modules.
 
 # imports
 import os
+from pathlib import Path
 from typing import Dict, Optional
+
+
+# Absolute path to this module and resolved repository root
+_MODULE_PATH = Path(__file__).resolve()
+# Repository root sits one level above the extensions package
+REPO_ROOT = _MODULE_PATH.parents[1]
+
+
+def _load_env_file() -> None:
+    """Populate os.environ with values from nearest .env files."""
+
+    env_candidates = []
+    for parent in _MODULE_PATH.parents:
+        env_path = parent / ".env"
+        if env_path.exists():
+            env_candidates.append(env_path)
+        if parent == REPO_ROOT:
+            break
+
+    if not env_candidates:
+        return
+
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except ImportError:
+        for env_path in env_candidates:
+            _fallback_load_env(env_path)
+    else:
+        for env_path in env_candidates:
+            load_dotenv(env_path, override=False)
+
+
+def _fallback_load_env(env_path: Path) -> None:
+    """Minimal .env loader used when python-dotenv is unavailable."""
+
+    with env_path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            line_no_comment = line.split("#", 1)[0].strip()
+            if "=" not in line_no_comment:
+                continue
+            key, value = line_no_comment.split("=", 1)
+            key = key.strip()
+            if not key or key in os.environ:
+                continue
+            cleaned_value = value.strip().strip("'\"")
+            os.environ[key] = cleaned_value
+
+
+_load_env_file()
 
 
 # Interpret LIMIT environment value; zero or "all" means no limit
@@ -19,6 +72,14 @@ def _resolve_limit(raw: Optional[str], default: Optional[int]) -> Optional[int]:
         return None
     value = int(normalized)
     return None if value <= 0 else value
+
+
+# Resolve problem-limit taking PROBLEM_LIMIT over legacy LIMIT when set
+def _resolve_problem_limit() -> Optional[int]:
+    raw_primary = os.getenv("PROBLEM_LIMIT")
+    if raw_primary is not None:
+        return _resolve_limit(raw_primary, default=None)
+    return _resolve_limit(os.getenv("LIMIT"), default=None)
 
 
 # Check if environment value looks like a directory path
@@ -74,7 +135,8 @@ MAX_EVAL_WORKERS = max(1, min(int(os.getenv("MAX_EVAL_WORKERS", str(min(os.cpu_c
 # Maximum execution timeout in seconds
 MAX_EXECUTION_TIMEOUT = float(os.getenv("MAX_EXECUTION_TIMEOUT", "30.0"))
 # Maximum number of HumanEval tasks to process; None means all tasks
-LIMIT: Optional[int] = _resolve_limit(os.getenv("LIMIT"), default=None)
+PROBLEM_LIMIT: Optional[int] = _resolve_problem_limit()
+LIMIT: Optional[int] = PROBLEM_LIMIT
 # Temperature used for generation requests
 DEFAULT_TEMP = 0.2
 TEMP = _resolve_temperature(DEFAULT_TEMP)
@@ -141,6 +203,7 @@ __all__ = [
     "CONCURRENCY",
     "MAX_EVAL_WORKERS",
     "MAX_EXECUTION_TIMEOUT",
+    "PROBLEM_LIMIT",
     "LIMIT",
     "TEMP",
     "EMPTY_COMPLETION_MAX_RETRIES",
@@ -158,5 +221,6 @@ __all__ = [
     "TOP_K",
     "REPEAT_PENALTY",
     "STOP_SEQS",
+    "REPO_ROOT",
     "SYSTEM",
 ]
