@@ -2,6 +2,7 @@
 
 Experiments for the accompanying article, built on OpenAI's HumanEval harness. This fork adds an Ollama-powered generation pipeline, subset-safe evaluation that reports unbiased pass@k/coverage@k, plotting utilities, and dataset download helpers. See [`originalREADME.md`](originalREADME.md) for upstream documentation.
 
+**Article:** [How pass@k is used to evaluate LLM coding performance](https://medium.com/@ggfincke/how-pass-k-is-used-to-evaluate-llm-coding-performance-296e5c4565bc)
 
 ## Getting Started
 
@@ -48,7 +49,7 @@ python -m extensions.cli.generate
 Key defaults (from [`extensions/config.py`](extensions/config.py)):
 
 - `MODEL="gpt-oss:20b"`
-- `N_SAMPLES=100` completions per task (set `LIMIT` to cap tasks)
+- `N_SAMPLES=100` completions per task (set `PROBLEM_LIMIT` to cap tasks; `LIMIT` still works)
 - `EVAL_KS=[1,5,10,25]`
 - `CONCURRENCY=5` parallel sampling workers
 - `MAX_RETRIES=2` retries for empty completions before falling back to `pass`
