@@ -1,5 +1,6 @@
 tqdm
 fire
 numpy
+python-dotenv
 requests
 setuptools
