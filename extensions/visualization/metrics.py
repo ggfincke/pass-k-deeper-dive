@@ -11,27 +11,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from extensions.evaluation.metrics import normalize_code
-
-
-# Compute the binomial coefficient (n choose r)
-def nCr(n: int, r: int) -> int:
-    if r < 0 or r > n:
-        return 0
-    r = min(r, n - r)
-    numer = 1
-    denom = 1
-    for i in range(1, r + 1):
-        numer *= n - r + i
-        denom *= i
-    return numer // denom if denom else 0
-
-
-# Probability that at least one of k samples is correct
-def pass_at_k(n: int, c: int, k: int) -> float:
-    if k <= 0 or n <= 0 or c < 0 or c > n or k > n:
-        return float("nan")
-    return 1.0 - (nCr(n - c, k) / nCr(n, k))
+from extensions.evaluation.metrics import normalize_code, pass_at_k
 
 
 # Summarize raw rows into per-task metrics with deduplication
@@ -42,7 +22,7 @@ def compute_per_task(rows: List[Dict]) -> pd.DataFrame:
         task_id = row.get("task_id")
         code = row.get("completion", "")
         res = str(row.get("result", "")).strip().lower()
-        passed = res == "passed"
+        passed = (row.get("passed") is True) or (res == "passed")
         by_task[task_id].append((code, passed))
 
     records = []
@@ -104,43 +84,44 @@ def compute_macro(df: pd.DataFrame, max_k: Optional[int] = None) -> pd.DataFrame
 
     rows = []
     total_tasks = len(df)
+    all_task_ids = df["task_id"].unique()
+
+    # Compute c_unique per task once, before k-loop
+    c_unique_by_task = (
+        df[["task_id", "c_unique"]].set_index("task_id")["c_unique"]
+        .reindex(all_task_ids, fill_value=0)
+    )
+
     for k in range(1, max_k + 1):
-        # Clamp per-task pass@k to available completions to ensure monotonic curves
-        # while maintaining contribution from all tasks
-        per_task_unbiased: List[float] = []
-        per_task_naive: List[float] = []
-        for _, row in df.iterrows():
-            n_unique = int(row["n_unique"])
-            n_raw = int(row["n_raw"])
+        # Filter to tasks with sufficient samples (n_raw >= k)
+        mask = df["n_raw"] >= k
+        tasks_with_k_samples = df[mask]
 
-            if n_raw <= 0:
-                per_task_unbiased.append(0.0)
-            else:
-                capped_raw_k = min(k, n_raw)
-                col_unbiased = f"pass_raw@{capped_raw_k}_task"
-                if col_unbiased in row.index:
-                    value_raw = row[col_unbiased]
-                    value_raw = 0.0 if pd.isna(value_raw) else float(value_raw)
-                else:
-                    value_raw = 0.0
-                per_task_unbiased.append(float(value_raw))
+        if len(tasks_with_k_samples) == 0:
+            # No tasks have k samples; report NaN
+            mean_unbiased = float("nan")
+            mean_naive = float("nan")
+        else:
+            per_task_unbiased: List[float] = []
+            per_task_naive: List[float] = []
+            for _, row in tasks_with_k_samples.iterrows():
+                n_raw = int(row["n_raw"])
+                col_unbiased = f"pass_raw@{k}_task"
+                col_naive = f"naive_pass@{k}_task"
 
-            if n_raw <= 0:
-                per_task_naive.append(0.0)
-            else:
-                capped_raw_k = min(k, n_raw)
-                col_naive = f"naive_pass@{capped_raw_k}_task"
-                if col_naive in row.index:
-                    value_naive = row[col_naive]
-                    value_naive = 0.0 if pd.isna(value_naive) else float(value_naive)
-                else:
-                    value_naive = 0.0
-                per_task_naive.append(float(value_naive))
+                value_raw = row.get(col_unbiased, 0.0)
+                value_raw = 0.0 if pd.isna(value_raw) else float(value_raw)
+                per_task_unbiased.append(value_raw)
 
-        # Calculate coverage as fraction of tasks with sufficient unique samples
-        coverage = float((df["n_unique"] >= k).mean())
-        mean_unbiased = sum(per_task_unbiased) / total_tasks if total_tasks else float("nan")
-        mean_naive = sum(per_task_naive) / total_tasks if total_tasks else float("nan")
+                value_naive = row.get(col_naive, 0.0)
+                value_naive = 0.0 if pd.isna(value_naive) else float(value_naive)
+                per_task_naive.append(value_naive)
+
+            mean_unbiased = sum(per_task_unbiased) / len(per_task_unbiased)
+            mean_naive = sum(per_task_naive) / len(per_task_naive)
+
+        # Calculate coverage@k using c_unique >= k pattern
+        coverage = float((c_unique_by_task >= k).mean())
         rows.append(
             {
                 "k": k,
