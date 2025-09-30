@@ -26,7 +26,6 @@ from extensions.visualization.io import (
 )
 from extensions.visualization.metrics import compute_macro, compute_per_task
 from extensions.visualization.plots import (
-    plot_pass_vs_k_naive_vs_unbiased,
     plot_coverage_vs_k_comparison,
     plot_pass_vs_k_unbiased_comparison,
 )
@@ -132,12 +131,6 @@ def main() -> None:
     # Generate visualization plots
     descriptor = f"{MODEL}, temp={TEMP:g}"
     extension = ".png"
-
-    dual_pass_fig = args.outdir / f"pass_vs_k_naive_vs_unbiased{extension}"
-    if max_k >= 1 and not macro_df.empty:
-        plot_pass_vs_k_naive_vs_unbiased(
-            macro_df, f"pass@k naive vs unbiased — {descriptor}", dual_pass_fig
-        )
 
     # Generate comparison plots if second results file provided
     if compare_path is not None and compare_labels is not None:

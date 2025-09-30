@@ -1,5 +1,9 @@
 # ~/extensions/visualization/plots.py
-"""Plotting helpers for evaluation metrics."""
+"""
+Plotting helpers for evaluation metrics.
+
+Provides functions for generating pass@k and coverage@k comparison plots.
+"""
 
 from pathlib import Path
 from typing import List
@@ -8,8 +12,9 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import pandas as pd
 
+from extensions.visualization.io import read_results_jsonl
+from extensions.visualization.metrics import compute_macro, compute_per_task
 from .settings import (
-    COVERAGE_LABEL_OFFSET,
     HIGHLIGHT_KS,
     PASS_K_XTICKS,
     PASS_K_XLIM,
@@ -30,39 +35,6 @@ def _configure_pass_axes() -> None:
     plt.ylim(PASS_K_YLIM)
     if PASS_K_XTICKS is not None:
         plt.xticks(PASS_K_XTICKS)
-
-
-# Plot the pass@k curve with coverage annotations
-def plot_pass_vs_k_with_coverage(
-    macro_df: pd.DataFrame, title: str, out_path: Path
-) -> None:
-    plt.figure()
-    xs = macro_df["k"].tolist()
-    ys = macro_df["pass@k_macro"].tolist()
-    plt.plot(xs, ys, marker="o", label="pass@k (unbiased)")
-
-    # Add coverage annotations for highlighted k values
-    covs = macro_df["coverage@k"].tolist()
-    for x, y, coverage in zip(xs, ys, covs):
-        if int(round(x)) not in HIGHLIGHT_KS:
-            continue
-        plt.annotate(
-            f"coverage={coverage:.2f}",
-            (x, y),
-            textcoords="offset points",
-            xytext=COVERAGE_LABEL_OFFSET,
-            ha="center",
-        )
-
-    plt.title(title)
-    plt.xlabel("k")
-    plt.ylabel("pass@k (macro)")
-    _configure_pass_axes()
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_path)
-    print(f"Saved: {out_path}")
-
 
 # Compute y-positions for stacked labels respecting plot margins
 def _stacked_label_positions(ax: Axes, values_desc: List[float]) -> List[float]:
@@ -91,67 +63,6 @@ def _stacked_label_positions(ax: Axes, values_desc: List[float]) -> List[float]:
     if top_candidate < min_allowed:
         top_candidate = min_allowed
     return [top_candidate - i * y_gap for i in range(len(values_desc))]
-
-
-def plot_pass_vs_k_naive_vs_unbiased(
-    macro_df: pd.DataFrame, title: str, out_path: Path
-) -> None:
-    fig, ax = plt.subplots()
-    xs = macro_df["k"].tolist()
-    unbiased = macro_df["pass@k_macro"].tolist()
-    naive = macro_df["pass@k_macro_naive"].tolist()
-
-    ax.plot(xs, unbiased, marker="o", label="pass@k (unbiased)")
-    ax.plot(xs, naive, marker="o", label="pass@k (naive)")
-
-    _configure_pass_axes()
-
-    # Add stacked annotations for highlighted k values with smarter positioning
-    indexed = macro_df.set_index("k")
-    for k in sorted(HIGHLIGHT_KS):
-        if k not in indexed.index:
-            continue
-        row = indexed.loc[k]
-        u_val = float(row["pass@k_macro"].item())
-        n_val = float(row["pass@k_macro_naive"].item())
-        labels = [
-            (f"pass@{k}={u_val:.2f}", u_val, "tab:blue"),
-            (f"naive@{k}={n_val:.2f}", n_val, "tab:orange"),
-        ]
-
-        labels_desc = sorted(labels, key=lambda item: item[1], reverse=True)
-        y_positions = _stacked_label_positions(
-            ax, [item[1] for item in labels_desc]
-        )
-
-        x_min, x_max = ax.get_xlim()
-        align_right = True
-        if (x_max - k) < STACKED_LABEL_EDGE_MARGIN and k not in STACKED_LABEL_FORCE_RIGHT_KS:
-            align_right = False
-        x_offset = STACKED_LABEL_X_OFFSET if align_right else -STACKED_LABEL_X_OFFSET
-        ha = "left" if align_right else "right"
-
-        for (text, _, color), y_pos in zip(labels_desc, y_positions):
-            ax.annotate(
-                text,
-                xy=(k, y_pos),
-                xycoords="data",
-                textcoords="offset points",
-                xytext=(x_offset, 0),
-                ha=ha,
-                va="center",
-                color=color,
-                annotation_clip=False,
-            )
-
-    ax.set_title(title)
-    ax.set_xlabel("k")
-    ax.set_ylabel("pass@k")
-    ax.legend(loc="lower right")
-    fig.tight_layout()
-    fig.savefig(out_path)
-    print(f"Saved: {out_path}")
-
 
 # Plot unbiased pass@k for two runs with stacked annotations
 def plot_pass_vs_k_unbiased_comparison(
@@ -352,9 +263,6 @@ def plot_duplicates_hist(
 def compare_two_runs(
     file_a: Path, file_b: Path, label_a: str, label_b: str, out_path: Path
 ) -> None:
-    from extensions.visualization.io import read_results_jsonl
-    from extensions.visualization.metrics import compute_macro, compute_per_task
-
     # Load and process both result files
     rows_a = read_results_jsonl(file_a)
     rows_b = read_results_jsonl(file_b)
@@ -383,8 +291,6 @@ def compare_two_runs(
 
 
 __all__ = [
-    "plot_pass_vs_k_with_coverage",
-    "plot_pass_vs_k_naive_vs_unbiased",
     "plot_pass_vs_k_unbiased_comparison",
     "plot_coverage_vs_k_comparison",
     "plot_duplicates_hist",

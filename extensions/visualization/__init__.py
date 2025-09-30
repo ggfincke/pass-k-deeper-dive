@@ -4,8 +4,6 @@ Visualization utilities for evaluation metrics.
 """
 
 from extensions.visualization.plots import (
-    plot_pass_vs_k_with_coverage,
-    plot_pass_vs_k_naive_vs_unbiased,
     plot_pass_vs_k_unbiased_comparison,
     plot_coverage_vs_k_comparison,
     plot_duplicates_hist,
@@ -20,8 +18,6 @@ from extensions.visualization.tables import (
 )
 
 __all__ = [
-    "plot_pass_vs_k_with_coverage",
-    "plot_pass_vs_k_naive_vs_unbiased",
     "plot_pass_vs_k_unbiased_comparison",
     "plot_coverage_vs_k_comparison",
     "plot_duplicates_hist",
