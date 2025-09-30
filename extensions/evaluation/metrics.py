@@ -20,27 +20,42 @@ def normalize_code(source: str) -> str:
     return "\n".join(lines)
 
 
+# Compute the binomial coefficient (n choose r)
+def nCr(n: int, r: int) -> int:
+    if r < 0 or r > n:
+        return 0
+    r = min(r, n - r)
+    numer = 1
+    denom = 1
+    for i in range(1, r + 1):
+        numer *= n - r + i
+        denom *= i
+    return numer // denom if denom else 0
+
+
+# Probability that at least one of k samples is correct
+def pass_at_k(n: int, c: int, k: int) -> float:
+    if k <= 0 or n <= 0 or c < 0 or c > n or k > n:
+        return float("nan")
+    denom = nCr(n, k)
+    if denom == 0:
+        return float("nan")
+    return 1.0 - (nCr(n - c, k) / denom)
+
+
 # Compute unbiased pass@k estimates per task
 def estimate_pass_at_k_vector(n: np.ndarray, c: np.ndarray, k: int) -> np.ndarray:
     out = np.full_like(n, np.nan, dtype=float)
-    mask = n >= k
+    if k <= 0:
+        return out
+
+    mask = (n >= k) & (n > 0)
     if not np.any(mask):
         return out
 
-    n_v = n[mask]
-    c_v = c[mask]
-
-    zero_mask = c_v == 0
-    vals = np.zeros_like(n_v, dtype=float)
-
-    pos_mask = ~zero_mask
-    if np.any(pos_mask):
-        n_p = n_v[pos_mask].astype(float)
-        c_p = c_v[pos_mask].astype(float)
-        j = np.arange(k, dtype=float)
-        num = np.prod((n_p[:, None] - c_p[:, None] - j) / (n_p[:, None] - j), axis=1)
-        vals[pos_mask] = 1.0 - num
-
+    n_v = n[mask].astype(int)
+    c_v = c[mask].astype(int)
+    vals = np.array([pass_at_k(int(n_i), int(c_i), k) for n_i, c_i in zip(n_v, c_v)], dtype=float)
     out[mask] = vals
     return out
 
@@ -58,5 +73,4 @@ def bootstrap_ci(values: np.ndarray, iters: int = 10_000, alpha: float = 0.05) -
     return (lo, hi)
 
 
-__all__ = ["normalize_code", "estimate_pass_at_k_vector", "bootstrap_ci"]
-
+__all__ = ["normalize_code", "nCr", "pass_at_k", "estimate_pass_at_k_vector", "bootstrap_ci"]
