@@ -174,7 +174,7 @@ def main() -> None:
                 compare_macro_df,
                 compare_labels[0],
                 compare_labels[1],
-                f"{MODEL} pass@k (unbiased) — {compare_labels[0]} vs {compare_labels[1]}",
+                f"pass@k (unbiased) — {compare_labels[0]} vs {compare_labels[1]}",
                 unbiased_cmp_fig,
             )
 
@@ -186,7 +186,7 @@ def main() -> None:
                 compare_macro_df,
                 compare_labels[0],
                 compare_labels[1],
-                f"{MODEL} coverage@k — {compare_labels[0]} vs {compare_labels[1]}",
+                f"coverage@k — {compare_labels[0]} vs {compare_labels[1]}",
                 coverage_cmp_fig,
             )
 
