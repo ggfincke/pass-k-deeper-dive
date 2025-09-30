@@ -109,31 +109,15 @@ def evaluate_functional_correctness_subset(
 
     ks = sorted({kk for kk in resolved_k if kk > 0})
 
-    # Compute naive pass@k using empirical success rate without correction
-    def _naive_pass_at_k_vector(n: np.ndarray, c: np.ndarray, k: int) -> np.ndarray:
-        out = np.full_like(n, np.nan, dtype=float)
-        mask = n > 0
-        if not np.any(mask):
-            return out
-
-        n_f = n[mask].astype(float)
-        c_f = c[mask].astype(float)
-        vals = 1.0 - np.power(1.0 - (c_f / n_f), k)
-        out[mask] = np.clip(vals, 0.0, 1.0)
-        return out
-
     metrics: Dict[str, object] = {}
     for kk in ks:
         vals = estimate_pass_at_k_vector(n_unique, c_unique, kk)
         metrics[f"pass@{kk}"] = float(np.nanmean(vals))
-        metrics[f"coverage@{kk}"] = float(np.mean(n_unique >= kk))
+        metrics[f"coverage@{kk}"] = float(np.mean(c_unique >= kk))
         if compute_ci:
             lo, hi = bootstrap_ci(vals)
             metrics[f"ci@{kk}.lo"] = lo
             metrics[f"ci@{kk}.hi"] = hi
-
-        naive_vals = _naive_pass_at_k_vector(n_unique, c_unique, kk)
-        metrics[f"naive_pass@{kk}"] = float(np.nanmean(naive_vals))
 
     per_task_counts = {
         tid: {
