@@ -29,6 +29,7 @@ from extensions.visualization.plots import (
     compare_two_runs,
     plot_duplicates_hist,
     plot_pass_vs_k_naive_vs_unbiased,
+    plot_coverage_vs_k_comparison,
     plot_pass_vs_k_unbiased_comparison,
     plot_pass_vs_k_with_coverage,
 )
@@ -175,6 +176,18 @@ def main() -> None:
                 compare_labels[1],
                 f"{MODEL} pass@k (unbiased) — {compare_labels[0]} vs {compare_labels[1]}",
                 unbiased_cmp_fig,
+            )
+
+            coverage_cmp_fig = (
+                args.outdir / f"coverage_vs_k_comparison{extension}"
+            )
+            plot_coverage_vs_k_comparison(
+                macro_df,
+                compare_macro_df,
+                compare_labels[0],
+                compare_labels[1],
+                f"{MODEL} coverage@k — {compare_labels[0]} vs {compare_labels[1]}",
+                coverage_cmp_fig,
             )
 
 

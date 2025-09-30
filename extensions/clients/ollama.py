@@ -9,11 +9,18 @@ Handles authentication-independent JSON payloads for generation requests.
 from typing import Dict
 
 import requests
+import threading
+import time
 
 from extensions.config import (
     MAX_NEW_TOKENS,
     MODEL,
+    OLLAMA_HTTP_MAX_RETRIES,
+    OLLAMA_HTTP_TIMEOUT,
+    OLLAMA_MAX_PARALLEL_REQUESTS,
     OLLAMA_OPTIONS,
+    OLLAMA_RETRY_BASE_DELAY,
+    OLLAMA_RETRY_MAX_DELAY,
     OLLAMA_URL,
     REPEAT_PENALTY,
     STOP_SEQS,
@@ -30,6 +37,18 @@ def _clean_options(options: Dict[str, object]) -> Dict[str, object]:
 
 
 # Issue a generation request and return text plus raw response
+_THREAD_LOCAL = threading.local()
+_REQUEST_GUARD = threading.BoundedSemaphore(OLLAMA_MAX_PARALLEL_REQUESTS)
+
+
+def _session() -> requests.Session:
+    sess = getattr(_THREAD_LOCAL, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        _THREAD_LOCAL.session = sess
+    return sess
+
+
 def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, object]:
     options = dict(OLLAMA_OPTIONS)
     options.update(
@@ -51,13 +70,35 @@ def generate(prompt: str, seed: int, temperature: float = TEMP) -> Dict[str, obj
         "options": options,
         "stream": False,
     }
-    response = requests.post(f"{OLLAMA_URL}/api/generate", json=payload)
-    response.raise_for_status()
-    data = response.json()
-    return {
-        "text": data.get("response", ""),
-        "raw_response": data,
-    }
+    attempt = 0
+    delay = OLLAMA_RETRY_BASE_DELAY
+    session = _session()
+
+    while True:
+        attempt += 1
+        _REQUEST_GUARD.acquire()
+        try:
+            response = session.post(
+                f"{OLLAMA_URL}/api/generate",
+                json=payload,
+                timeout=OLLAMA_HTTP_TIMEOUT,
+            )
+        finally:
+            _REQUEST_GUARD.release()
+
+        if response.status_code in {429, 503} and attempt <= OLLAMA_HTTP_MAX_RETRIES:
+            sleep_for = min(delay, OLLAMA_RETRY_MAX_DELAY)
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            delay = min(delay * 2, OLLAMA_RETRY_MAX_DELAY)
+            continue
+
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "text": data.get("response", ""),
+            "raw_response": data,
+        }
 
 
 __all__ = ["generate"]

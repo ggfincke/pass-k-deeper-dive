@@ -10,10 +10,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, cast
 
+import time
+
 from human_eval.data import read_problems, write_jsonl
 
 from extensions.clients.ollama import generate as ollama_generate
-from extensions.config import CONCURRENCY, EVAL_KS, LIMIT, MAX_RETRIES, N_SAMPLES, TEMP
+from extensions.config import (
+    CONCURRENCY,
+    EVAL_KS,
+    EMPTY_COMPLETION_BACKOFF_BASE,
+    EMPTY_COMPLETION_BACKOFF_MAX,
+    EMPTY_COMPLETION_MAX_RETRIES,
+    LIMIT,
+    MAX_RETRIES,
+    N_SAMPLES,
+    TEMP,
+)
 from extensions.evaluation.functional import evaluate_functional_correctness_subset
 from extensions.generation.records import (
     AttemptRecord,
@@ -64,9 +76,12 @@ def generate_humaneval_completions(
         f"samples={_format_relative(samples_path, repo_root)}, "
         f"empty_samples={_format_relative(empty_samples_path, repo_root)}"
     )
+    max_generation_workers = max(1, min(CONCURRENCY, N_SAMPLES))
+
     _debug(
         "Config -> "
-        f"N_SAMPLES={N_SAMPLES}, CONCURRENCY={CONCURRENCY}, LIMIT={LIMIT}, TEMP={TEMP}, MAX_RETRIES={MAX_RETRIES}"
+        f"N_SAMPLES={N_SAMPLES}, CONCURRENCY={CONCURRENCY}, LIMIT={LIMIT}, TEMP={TEMP}, "
+        f"MAX_RETRIES={MAX_RETRIES}, EMPTY_COMPLETION_MAX_RETRIES={EMPTY_COMPLETION_MAX_RETRIES}"
     )
     _debug(
         "Generation parameters -> "
@@ -78,113 +93,123 @@ def generate_humaneval_completions(
             preview_ids += ", ..."
         _debug(f"Task preview -> {preview_ids}")
 
-    for ti, task_id in enumerate(task_ids):
-        prompt = problems[task_id]["prompt"]
+    with ThreadPoolExecutor(max_workers=max_generation_workers) as executor:
+        for ti, task_id in enumerate(task_ids):
+            prompt = problems[task_id]["prompt"]
 
-        if N_SAMPLES <= 0:
-            continue
+            if N_SAMPLES <= 0:
+                continue
 
-        _debug(f"{task_id}: scheduling {N_SAMPLES} sample(s) with base index {ti}")
+            _debug(f"{task_id}: scheduling {N_SAMPLES} sample(s) with base index {ti}")
 
-        def _sample_once(sample_idx: int) -> Tuple[SampleRecord, Optional[EmptySampleRecord]]:
-            base_seed = 1337 + 1000 * ti + sample_idx
-            completion = ""
-            attempts: List[AttemptRecord] = []
-            _debug(f"{task_id}[sample={sample_idx}] base_seed={base_seed}")
+            def _sample_once(sample_idx: int) -> Tuple[SampleRecord, Optional[EmptySampleRecord]]:
+                base_seed = 1337 + 1000 * ti + sample_idx
+                completion = ""
+                attempts: List[AttemptRecord] = []
+                _debug(f"{task_id}[sample={sample_idx}] base_seed={base_seed}")
 
-            resolved_attempt: Optional[int] = None
-            for attempt in range(MAX_RETRIES + 1):
-                seed = base_seed + attempt
-                temperature = TEMP
+                resolved_attempt: Optional[int] = None
+                retry_budget = EMPTY_COMPLETION_MAX_RETRIES
+                for attempt in range(retry_budget + 1):
+                    seed = base_seed + attempt
+                    temperature = TEMP
 
-                _debug(
-                    f"{task_id}[sample={sample_idx}] attempt={attempt} seed={seed} temp={temperature}"
-                )
-
-                result = cast(
-                    GenerationResult,
-                    ollama_generate(prompt, seed=seed, temperature=temperature),
-                )
-                raw_text_value = result.get("text")
-                raw_text = raw_text_value if isinstance(raw_text_value, str) else ""
-                attempt_completion = raw_text
-                raw_response = result.get("raw_response")
-
-                attempts.append(
-                    {
-                        "prompt": prompt,
-                        "seed": seed,
-                        "temperature": temperature,
-                        "raw_text": raw_text,
-                        "raw_response": raw_response,
-                        "completion": attempt_completion,
-                    }
-                )
-
-                status = "non-empty" if attempt_completion.strip() else "empty"
-                snippet: str = ""
-                if attempt_completion.strip():
-                    first_line = attempt_completion.strip().splitlines()[0]
-                    snippet = first_line[:80]
-                if snippet:
                     _debug(
-                        f"{task_id}[sample={sample_idx}] attempt={attempt} -> {status}; first line: {snippet!r}"
+                        f"{task_id}[sample={sample_idx}] attempt={attempt} seed={seed} temp={temperature}"
                     )
-                else:
-                    _debug(f"{task_id}[sample={sample_idx}] attempt={attempt} -> {status}")
 
-                if attempt_completion.strip():
-                    completion = attempt_completion
-                    resolved_attempt = attempt
-                    if attempt > 0:
-                        print(
-                            f"[info] Non-empty completion recovered for {task_id} on retry {attempt}"
+                    result = cast(
+                        GenerationResult,
+                        ollama_generate(prompt, seed=seed, temperature=temperature),
+                    )
+                    raw_text_value = result.get("text")
+                    raw_text = raw_text_value if isinstance(raw_text_value, str) else ""
+                    attempt_completion = raw_text
+                    raw_response = result.get("raw_response")
+
+                    attempts.append(
+                        {
+                            "prompt": prompt,
+                            "seed": seed,
+                            "temperature": temperature,
+                            "raw_text": raw_text,
+                            "raw_response": raw_response,
+                            "completion": attempt_completion,
+                        }
+                    )
+
+                    status = "non-empty" if attempt_completion.strip() else "empty"
+                    snippet: str = ""
+                    if attempt_completion.strip():
+                        first_line = attempt_completion.strip().splitlines()[0]
+                        snippet = first_line[:80]
+                    if snippet:
+                        _debug(
+                            f"{task_id}[sample={sample_idx}] attempt={attempt} -> {status}; first line: {snippet!r}"
                         )
-                    break
+                    else:
+                        _debug(f"{task_id}[sample={sample_idx}] attempt={attempt} -> {status}")
 
-            empty_record: Optional[EmptySampleRecord] = None
-            if not completion.strip():
-                print(
-                    f"[warn] Empty completion for {task_id} after {MAX_RETRIES + 1} attempts; falling back to 'pass'"
+                    if attempt_completion.strip():
+                        completion = attempt_completion
+                        resolved_attempt = attempt
+                        if attempt > 0:
+                            print(
+                                f"[info] Non-empty completion recovered for {task_id} on retry {attempt}"
+                            )
+                        break
+
+                    if attempt < retry_budget:
+                        backoff = min(
+                            EMPTY_COMPLETION_BACKOFF_MAX,
+                            EMPTY_COMPLETION_BACKOFF_BASE * (2 ** attempt),
+                        )
+                        if backoff > 0:
+                            time.sleep(backoff)
+
+                empty_record: Optional[EmptySampleRecord] = None
+                if not completion.strip():
+                    print(
+                        f"[warn] Empty completion for {task_id} after {retry_budget + 1} attempts; falling back to 'pass'"
+                    )
+                    completion = "    pass\n"
+                    empty_record = {
+                        "task_id": task_id,
+                        "resolved": False,
+                        "attempts": attempts,
+                    }
+                    _debug(f"{task_id}[sample={sample_idx}] flagged as empty after retries")
+                elif not attempts[0]["completion"].strip():
+                    empty_record = {
+                        "task_id": task_id,
+                        "resolved": True,
+                        "attempts": attempts,
+                        "final_completion": completion,
+                    }
+                    _debug(
+                        f"{task_id}[sample={sample_idx}] recovered from empty initial attempt at attempt={resolved_attempt}"
+                    )
+
+                if resolved_attempt is not None:
+                    _debug(
+                        f"{task_id}[sample={sample_idx}] accepted completion from attempt={resolved_attempt}"
+                    )
+
+                return (
+                    {"task_id": task_id, "completion": completion},
+                    empty_record,
                 )
-                completion = "    pass\n"
-                empty_record = {
-                    "task_id": task_id,
-                    "resolved": False,
-                    "attempts": attempts,
-                }
-                _debug(f"{task_id}[sample={sample_idx}] flagged as empty after retries")
-            elif not attempts[0]["completion"].strip():
-                empty_record = {
-                    "task_id": task_id,
-                    "resolved": True,
-                    "attempts": attempts,
-                    "final_completion": completion,
-                }
-                _debug(
-                    f"{task_id}[sample={sample_idx}] recovered from empty initial attempt at attempt={resolved_attempt}"
-                )
 
-            if resolved_attempt is not None:
-                _debug(f"{task_id}[sample={sample_idx}] accepted completion from attempt={resolved_attempt}")
+            futures = {}
+            results: Dict[int, Tuple[SampleRecord, Optional[EmptySampleRecord]]] = {}
 
-            return (
-                {"task_id": task_id, "completion": completion},
-                empty_record,
-            )
-
-        futures = {}
-        results: Dict[int, Tuple[SampleRecord, Optional[EmptySampleRecord]]] = {}
-        max_workers = min(CONCURRENCY, N_SAMPLES)
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             try:
                 for j in range(N_SAMPLES):
                     future = executor.submit(_sample_once, j)
                     futures[future] = j
 
                 for fut in as_completed(futures):
-                    idx = futures[fut]
+                    idx = futures.pop(fut)
                     try:
                         results[idx] = fut.result()
                     except Exception as e:
@@ -198,32 +223,28 @@ def generate_humaneval_completions(
                                 "attempts": [{"error": str(e)}],
                             }
                         )
-                    finally:
-                        # Clean up future reference
-                        del futures[fut]
             except Exception:
-                # Cancel remaining futures if something goes wrong
-                for future in futures:
+                for future in list(futures):
                     future.cancel()
                 raise
 
-        for j in range(N_SAMPLES):
-            sample_record, empty_record = results[j]
-            samples.append(sample_record)
-            if empty_record:
-                empty_samples.append(empty_record)
+            for j in range(N_SAMPLES):
+                sample_record, empty_record = results[j]
+                samples.append(sample_record)
+                if empty_record:
+                    empty_samples.append(empty_record)
 
-        _debug(
-            f"{task_id}: collected {N_SAMPLES} sample(s); empty recovery count={sum(1 for _, rec in results.values() if rec)}"
-        )
-
-        completed = ti + 1
-        if total_tasks > 0:
-            percent = (completed / total_tasks) * 100
-            print(
-                f"[progress] Completed {completed}/{total_tasks} tasks ({percent:5.1f}%)",
-                flush=True,
+            _debug(
+                f"{task_id}: collected {N_SAMPLES} sample(s); empty recovery count={sum(1 for _, rec in results.values() if rec)}"
             )
+
+            completed = ti + 1
+            if total_tasks > 0:
+                percent = (completed / total_tasks) * 100
+                print(
+                    f"[progress] Completed {completed}/{total_tasks} tasks ({percent:5.1f}%)",
+                    flush=True,
+                )
 
     write_jsonl(str(samples_path), cast(Iterable[Dict[str, object]], samples))
     print(

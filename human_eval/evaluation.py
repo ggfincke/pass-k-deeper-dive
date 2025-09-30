@@ -7,7 +7,7 @@ import numpy as np
 import tqdm
 
 from human_eval.data import HUMAN_EVAL, read_problems, stream_jsonl, write_jsonl
-from human_eval.execution import check_correctness
+from human_eval.execution import SANDBOX_PROCESS_LIMIT, check_correctness
 
 
 def estimate_pass_at_k(
@@ -51,7 +51,9 @@ def evaluate_functional_correctness(
     problems = read_problems(problem_file)
 
     # Check the generated samples against test suites.
-    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+    max_workers = max(1, min(n_workers, SANDBOX_PROCESS_LIMIT))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
         futures = []
         completion_id = Counter()

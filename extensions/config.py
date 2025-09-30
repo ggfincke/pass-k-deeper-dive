@@ -86,6 +86,16 @@ OLLAMA_OPTIONS: Dict[str, object] = {
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "131072"))
 # Retry budget when the model returns empty completions
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
+# Max retries for empty completions can be overridden separately
+EMPTY_COMPLETION_MAX_RETRIES = max(
+    0, int(os.getenv("EMPTY_COMPLETION_MAX_RETRIES", str(MAX_RETRIES)))
+)
+EMPTY_COMPLETION_BACKOFF_BASE = max(
+    0.0, float(os.getenv("EMPTY_COMPLETION_BACKOFF_BASE", "0.1"))
+)
+EMPTY_COMPLETION_BACKOFF_MAX = max(
+    0.0, float(os.getenv("EMPTY_COMPLETION_BACKOFF_MAX", "1.0"))
+)
 # Nucleus sampling parameter (set to 1.0 for pure sampling)
 TOP_P = float(os.getenv("TOP_P", "1.0"))
 # Top-k sampling cutoff; zero disables the constraint
@@ -108,6 +118,18 @@ SYSTEM = (
     "• Do NOT include top-level comments or print statements.\n"
     "• No leading blank lines. End with a single trailing newline.\n"
 )
+# Concurrency controls for Ollama interactions
+OLLAMA_MAX_PARALLEL_REQUESTS = max(
+    1, int(os.getenv("OLLAMA_MAX_PARALLEL_REQUESTS", str(CONCURRENCY)))
+)
+OLLAMA_HTTP_TIMEOUT = float(os.getenv("OLLAMA_HTTP_TIMEOUT", "120.0"))
+OLLAMA_HTTP_MAX_RETRIES = max(0, int(os.getenv("OLLAMA_HTTP_MAX_RETRIES", "3")))
+OLLAMA_RETRY_BASE_DELAY = max(
+    0.0, float(os.getenv("OLLAMA_RETRY_BASE_DELAY", "0.1"))
+)
+OLLAMA_RETRY_MAX_DELAY = max(
+    0.0, float(os.getenv("OLLAMA_RETRY_MAX_DELAY", "2.0"))
+)
 
 __all__ = [
     "OLLAMA_URL",
@@ -119,9 +141,17 @@ __all__ = [
     "MAX_EXECUTION_TIMEOUT",
     "LIMIT",
     "TEMP",
+    "EMPTY_COMPLETION_MAX_RETRIES",
+    "EMPTY_COMPLETION_BACKOFF_BASE",
+    "EMPTY_COMPLETION_BACKOFF_MAX",
     "OLLAMA_OPTIONS",
     "MAX_NEW_TOKENS",
     "MAX_RETRIES",
+    "OLLAMA_MAX_PARALLEL_REQUESTS",
+    "OLLAMA_HTTP_TIMEOUT",
+    "OLLAMA_HTTP_MAX_RETRIES",
+    "OLLAMA_RETRY_BASE_DELAY",
+    "OLLAMA_RETRY_MAX_DELAY",
     "TOP_P",
     "TOP_K",
     "REPEAT_PENALTY",
